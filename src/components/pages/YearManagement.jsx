@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, Button, Table, Badge, Modal, Form, Alert, Toast, ToastContainer } from 'react-bootstrap';
-import { FiTrash2, FiCalendar, FiFolder, FiEye, FiEdit2 } from 'react-icons/fi';
+import { FiTrash2, FiCalendar, FiFolder, FiEye } from 'react-icons/fi';
 import { doc, collection } from 'firebase/firestore';
 import { db, rtdb } from '../../firebase';
 import { ref, set, onValue } from 'firebase/database';
@@ -167,109 +167,128 @@ const YearManagement = () => {
   };
 
   const handleEditYearSubmit = async () => {
-    if (editYear && editYear !== originalYear && !isNaN(editYear) && editYear.length === 4) {
-      const yearNum = parseInt(editYear);
-      if (yearNum >= 1900 && yearNum <= 2100) {
-        setIsEditingYear(true);
-        try {
-          // Check if new year already exists
-          if (years.includes(editYear.toString())) {
-            showErrorToast(`Year ${editYear} already exists for this client.`);
-            setIsEditingYear(false);
-            return;
-          }
+    // Validate 4-digit year input
+    if (!editYear || isNaN(editYear) || editYear.length !== 4) {
+      showErrorToast("Please enter a valid 4-digit year");
+      return;
+    }
 
-          const clientContact = currentClient?.contact || client?.contact || client?.id;
-          if (!clientContact) {
-            throw new Error("Client Contact is required to edit a year");
-          }
+    const yearNum = parseInt(editYear);
+    if (yearNum < 1900 || yearNum > 2100) {
+      showErrorToast("Please enter a year between 1900 and 2100");
+      return;
+    }
 
-          console.log("✏️ Editing year for client Contact:", clientContact, "from", originalYear, "to", editYear);
+    // Format to "2021-22" style
+    const formattedNewYear = formatYear(editYear);
 
-          // Get old year document and its documents
-          const oldYearDocRef = getYearDocRef(clientContact, originalYear);
-          const oldYearDocumentsRef = getYearDocumentsRef(clientContact, originalYear);
+    // Check if the formatted year is same as original (no change needed)
+    if (formattedNewYear === originalYear) {
+      setShowEditYearModal(false);
+      return;
+    }
 
-          if (!oldYearDocRef || !oldYearDocumentsRef) {
-            throw new Error("Unable to get year references");
-          }
-
-          // Get old year data and documents
-          const oldYearDoc = await firestoreHelpers.get(oldYearDocRef);
-          const oldDocuments = await documentHelpers.getDocuments(oldYearDocumentsRef);
-
-          if (oldYearDoc) {
-            // Get new year document
-            const newYearDocRef = getYearDocRef(clientContact, editYear);
-            const newYearDocumentsRef = getYearDocumentsRef(clientContact, editYear);
-
-            if (!newYearDocRef || !newYearDocumentsRef) {
-              throw new Error("Unable to get new year references");
-            }
-
-            // Create new year document with updated year
-            const newYearData = {
-              ...oldYearDoc,
-              year: editYear.toString(),
-              updatedAt: new Date().toISOString()
-            };
-
-            await firestoreHelpers.set(newYearDocRef, newYearData);
-
-            // Copy all documents to new year
-            for (const doc of oldDocuments) {
-              const updatedDocData = {
-                ...doc,
-                year: editYear.toString(),
-                updatedAt: new Date().toISOString()
-              };
-              delete updatedDocData.id; // Remove old ID
-              await documentHelpers.createDocument(newYearDocumentsRef, updatedDocData);
-            }
-
-            // Delete old year and its documents
-            await firestoreHelpers.delete(oldYearDocRef);
-
-            // Update client's years array
-            const clientDocRef = getClientDocRef(clientContact);
-            if (clientDocRef) {
-              const currentUserData = currentClient || client;
-              const existingYears = currentUserData?.years || [];
-
-              const updatedYears = existingYears.map(y => y === originalYear ? editYear.toString() : y)
-                .sort((a, b) => parseInt(b) - parseInt(a));
-              await firestoreHelpers.update(clientDocRef, { years: updatedYears });
-              console.log("📅 Updated client's years array in Firestore:", updatedYears);
-            }
-
-            showSuccessToast(`Year updated from ${originalYear} to ${editYear} successfully!`);
-            console.log("✅ Year updated successfully in Firestore");
-
-            // Close modal and reset form
-            setShowEditYearModal(false);
-            setEditYear("");
-            setOriginalYear("");
-
-            // Refresh years from Firestore
-            setTimeout(() => {
-              refreshYearsFromFirestore();
-            }, 1000);
-          } else {
-            console.log("ℹ️ No data found for the specified year to update");
-            showErrorToast("No data found for the specified year.");
-          }
-        } catch (error) {
-          console.error("❌ Error updating year:", error);
-          showErrorToast(`Failed to update year: ${error.message}`);
-        } finally {
-          setIsEditingYear(false);
-        }
-      } else {
-        showErrorToast("Please enter a year between 1900 and 2100");
+    setIsEditingYear(true);
+    try {
+      // Check if new year already exists
+      if (years.includes(formattedNewYear)) {
+        showErrorToast(`Year ${formattedNewYear} already exists for this client.`);
         setIsEditingYear(false);
+        return;
       }
-    } else {
-      showErrorToast("Please enter a valid 4-digit year that is different from the current year");
+
+      const clientContact = currentClient?.contact || client?.contact || client?.id;
+      if (!clientContact) {
+        throw new Error("Client Contact is required to edit a year");
+      }
+
+      console.log("✏️ Editing year for client Contact:", clientContact, "from", originalYear, "to", formattedNewYear);
+
+      // Get old year document and its documents
+      const oldYearDocRef = getYearDocRef(clientContact, originalYear);
+      const oldYearDocumentsRef = getYearDocumentsRef(clientContact, originalYear);
+
+      if (!oldYearDocRef || !oldYearDocumentsRef) {
+        throw new Error("Unable to get year references");
+      }
+
+      // Get old year data and documents
+      const oldYearDoc = await firestoreHelpers.get(oldYearDocRef);
+      const oldDocuments = await documentHelpers.getDocuments(oldYearDocumentsRef);
+
+      if (oldYearDoc) {
+        // Get new year document
+        const newYearDocRef = getYearDocRef(clientContact, formattedNewYear);
+        const newYearDocumentsRef = getYearDocumentsRef(clientContact, formattedNewYear);
+
+        if (!newYearDocRef || !newYearDocumentsRef) {
+          throw new Error("Unable to get new year references");
+        }
+
+        // Create new year document with updated year
+        const newYearData = {
+          ...oldYearDoc,
+          year: formattedNewYear,
+          updatedAt: new Date().toISOString()
+        };
+
+        await firestoreHelpers.set(newYearDocRef, newYearData);
+
+        // Copy all documents to new year
+        for (const doc of oldDocuments) {
+          const updatedDocData = {
+            ...doc,
+            year: formattedNewYear,
+            updatedAt: new Date().toISOString()
+          };
+          delete updatedDocData.id; // Remove old ID
+          await documentHelpers.createDocument(newYearDocumentsRef, updatedDocData);
+        }
+
+        // Delete old year and its documents
+        await firestoreHelpers.delete(oldYearDocRef);
+
+        // Update client's years array
+        const clientDocRef = getClientDocRef(clientContact);
+        if (clientDocRef) {
+          const currentUserData = currentClient || client;
+          const existingYears = currentUserData?.years || [];
+
+          const updatedYears = existingYears.map(y => y === originalYear ? formattedNewYear : y)
+            .sort((a, b) => {
+              // Custom sort for year ranges like "2028-29"
+              const getStartYear = (yearStr) => {
+                if (yearStr.includes('-')) {
+                  return parseInt(yearStr.split('-')[0]);
+                }
+                return parseInt(yearStr);
+              };
+              return getStartYear(b) - getStartYear(a);
+            });
+          await firestoreHelpers.update(clientDocRef, { years: updatedYears });
+          console.log("📅 Updated client's years array in Firestore:", updatedYears);
+        }
+
+        showSuccessToast(`Year updated from ${originalYear} to ${formattedNewYear} successfully!`);
+        console.log("✅ Year updated successfully in Firestore");
+
+        // Close modal and reset form
+        setShowEditYearModal(false);
+        setEditYear("");
+        setOriginalYear("");
+
+        // Refresh years from Firestore
+        setTimeout(() => {
+          refreshYearsFromFirestore();
+        }, 1000);
+      } else {
+        console.log("ℹ️ No data found for the specified year to update");
+        showErrorToast("No data found for the specified year.");
+      }
+    } catch (error) {
+      console.error("❌ Error updating year:", error);
+      showErrorToast(`Failed to update year: ${error.message}`);
+    } finally {
       setIsEditingYear(false);
     }
   };
@@ -300,7 +319,25 @@ const YearManagement = () => {
 
       console.log("🗑️ Deleting year", year, "for client Contact:", clientContact);
 
-      // Delete the year document from Firestore (this will cascade delete all documents)
+      // 1. DELETE ALL DOCUMENTS IN THE SUBCOLLECTION MANUALLY
+      // Firestore does not cascade delete subcollections, so we must do it ourselves.
+      const documentsRef = getYearDocumentsRef(clientContact, year);
+      if (documentsRef) {
+        // querySnapshot returned from helper contains plain objects with ID
+        const docsSnapshot = await firestoreHelpers.getCollection(documentsRef);
+        console.log(`🗑️ Found ${docsSnapshot.length} documents to delete in year ${year}`);
+
+        // Use a loop to delete each document reliably
+        for (const docData of docsSnapshot) {
+          // Create reference directly using the collection ref and the doc ID
+          // We avoid using 'doc' variable name for the item to prevent shadowing the import
+          const docToDeleteRef = doc(documentsRef, docData.id);
+          await firestoreHelpers.delete(docToDeleteRef);
+        }
+        console.log("✅ All documents in subcollection deleted.");
+      }
+
+      // 2. Delete the year document from Firestore
       const yearDocRef = getYearDocRef(clientContact, year);
       if (!yearDocRef) {
         throw new Error("Unable to get year document reference");
@@ -324,6 +361,13 @@ const YearManagement = () => {
 
       showSuccessToast(`Year ${year} deleted successfully! ${docCount} ${docCount === 1 ? 'document' : 'documents'} removed.`);
       console.log(`✅ Year ${year} deleted successfully from Firestore`);
+
+      // Clear document count for deleted year
+      setDocumentCounts(prev => {
+        const next = { ...prev };
+        delete next[year];
+        return next;
+      });
 
       // Refresh years from Firestore
       setTimeout(() => {
@@ -438,6 +482,13 @@ const YearManagement = () => {
               return getStartYear(b) - getStartYear(a);
             });
             setYears(updatedYears);
+
+            // Explicitly set count to 0 for new year
+            setDocumentCounts(prev => ({
+              ...prev,
+              [formattedYear]: 0
+            }));
+
             console.log("🔄 Manually updated local years state:", updatedYears);
           }
 
@@ -799,38 +850,6 @@ const YearManagement = () => {
                           }}
                         >
                           <FiEye size={16} />
-                        </button>
-                        <button
-                          onClick={() => handleEditYear(year)}
-                          title="Edit this year"
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            borderRadius: '8px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            border: 'none',
-                            background: '#fefce8',
-                            color: '#eab308',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s ease',
-                            boxShadow: '0 2px 4px rgba(234, 179, 8, 0.1)'
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#eab308';
-                            e.currentTarget.style.color = 'white';
-                            e.currentTarget.style.transform = 'translateY(-2px)';
-                            e.currentTarget.style.boxShadow = '0 4px 6px rgba(234, 179, 8, 0.2)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.background = '#fefce8';
-                            e.currentTarget.style.color = '#eab308';
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(234, 179, 8, 0.1)';
-                          }}
-                        >
-                          <FiEdit2 size={16} />
                         </button>
                         <button
                           onClick={() => handleDeleteYear(year)}

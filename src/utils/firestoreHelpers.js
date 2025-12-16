@@ -241,6 +241,45 @@ export const clientHelpers = {
     }
 
     // Create new client (no existing record found)
+    // CRITICAL: Ensure no orphaned subcollections exist from previous incomplete deletions
+    try {
+      console.log("🧹 Checking for orphaned subcollections before creation...");
+
+      // 1. Check and clean orphaned years
+      const yearsCollectionRef = collection(clientDocRef, 'years');
+      const yearsSnapshot = await getDocs(yearsCollectionRef);
+
+      if (!yearsSnapshot.empty) {
+        console.log(`🧹 Cleaning up ${yearsSnapshot.size} orphaned year docs`);
+        for (const yearDoc of yearsSnapshot.docs) {
+          // Deep clean documents in year
+          try {
+            const docsRef = collection(yearDoc.ref, 'documents');
+            const docsSnap = await getDocs(docsRef);
+            for (const d of docsSnap.docs) {
+              await deleteDoc(d.ref);
+            }
+          } catch (e) {
+            console.warn(`Could not clean year documents: ${e.message}`);
+          }
+          await deleteDoc(yearDoc.ref);
+        }
+      }
+
+      // 2. Check and clean orphaned generic documents
+      const genericDocsRef = collection(clientDocRef, 'genericDocuments');
+      const genericSnapshot = await getDocs(genericDocsRef);
+      if (!genericSnapshot.empty) {
+        console.log(`🧹 Cleaning up ${genericSnapshot.size} orphaned generic docs`);
+        for (const d of genericSnapshot.docs) {
+          await deleteDoc(d.ref);
+        }
+      }
+    } catch (cleanupError) {
+      console.warn("⚠️ Error during pre-creation cleanup:", cleanupError);
+      // Proceed anyway, we don't want to block creation if cleanup fails non-critically
+    }
+
     return await firestoreHelpers.set(clientDocRef, {
       name: clientData.name,
       contact: sanitizedContact, // Store sanitized contact
@@ -343,7 +382,7 @@ export const clientHelpers = {
   subscribeToClients(clientsCollectionRef, callback, errorCallback) {
     try {
       // Subscribe to the clients collection
-      const q = query(clientsCollectionRef, orderBy("name", "asc"));
+      const q = query(clientsCollectionRef);
       return onSnapshot(
         q,
         (snapshot) => {

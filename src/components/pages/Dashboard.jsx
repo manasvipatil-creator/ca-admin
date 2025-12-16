@@ -425,7 +425,7 @@ const Dashboard = ({ goToClient, goToReports }) => {
                       letterSpacing: '0.5px',
                       marginBottom: '10px'
                     }}>
-                      Total Documents
+                      Total Documents (Yearwise)
                     </div>
                     <div style={{ 
                       fontSize: '2.5rem', 

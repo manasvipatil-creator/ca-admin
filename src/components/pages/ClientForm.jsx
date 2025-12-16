@@ -317,6 +317,7 @@ const ClientForm = () => {
                         isInvalid={!!fieldErrors.contact}
                         maxLength={10}
                         required
+                        disabled={editIndex !== null && editIndex !== undefined}
                       />
                       <Form.Control.Feedback type="invalid">
                         {fieldErrors.contact}

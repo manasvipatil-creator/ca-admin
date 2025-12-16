@@ -34,12 +34,12 @@ function AppContent() {
     } catch (error) {
       console.error("❌ Firebase sign out error:", error);
     }
-    
+
     // Clear localStorage and context
     localStorage.removeItem("auth");
     localStorage.removeItem("userEmail");
     localStorage.removeItem("userId");
-    
+
     // Clear any stored navigation state and redirect to login
     window.location.href = '/';
   };

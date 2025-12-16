@@ -13,55 +13,53 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
   const [importResults, setImportResults] = useState(null);
   const [error, setError] = useState('');
 
-  // Validation function for individual client data
+  // Relaxed validation function - store data as is
   const validateClientData = (client) => {
     const errors = [];
 
-    // Name validation
+    // Name validation - accept all characters including brackets and commas
     if (!client.name || client.name.trim().length === 0) {
       errors.push('Name is required');
     } else if (client.name.trim().length < 2) {
       errors.push('Name must be at least 2 characters');
     } else if (client.name.trim().length > 100) {
       errors.push('Name must be less than 100 characters');
-    } else if (!/^[a-zA-Z\s.'-]+$/.test(client.name.trim())) {
-      errors.push('Name can only contain letters, spaces, dots, apostrophes, and hyphens');
     }
+    // REMOVED: Strict character validation for names
 
-    // Contact validation
+    // Contact validation - relaxed
     if (!client.contact || client.contact.toString().trim().length === 0) {
       errors.push('Contact number is required');
     } else {
       const digitsOnly = client.contact.toString().replace(/\D/g, '');
       if (digitsOnly.length !== 10) {
-        errors.push('Contact number must be exactly 10 digits');
-      } else if (!/^[6-9]\d{9}$/.test(digitsOnly)) {
-        errors.push('Contact number must start with 6, 7, 8, or 9');
+        errors.push('Contact number should be 10 digits');
       }
+      // REMOVED: Strict validation for starting digit
     }
 
-    // PAN validation
+    // PAN validation - accept as is, clean up but don't restrict
     if (!client.pan || client.pan.toString().trim().length === 0) {
       errors.push('PAN number is required');
     } else {
       const sanitizedPAN = client.pan.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
-      const panRegex = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
-      if (!panRegex.test(sanitizedPAN)) {
-        errors.push('PAN must be in format: ABCDE1234F (5 letters, 4 digits, 1 letter)');
+      if (sanitizedPAN.length === 0) {
+        errors.push('PAN number is required');
       }
+      // REMOVED: Strict PAN format validation
     }
 
-    // Email validation
-    if (!client.email || client.email.toString().trim().length === 0) {
-      errors.push('Email address is required');
-    } else {
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRegex.test(client.email.toString().trim())) {
-        errors.push('Please enter a valid email address');
-      } else if (client.email.toString().trim().length > 254) {
+    // Email validation - optional
+    if (client.email && client.email.toString().trim().length > 0) {
+      const emailValue = client.email.toString().trim().toLowerCase();
+      if (emailValue.length > 254) {
         errors.push('Email address is too long');
+      } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue)) {
+        // Warning instead of error if email is provided but invalid
+        errors.push('Email format appears invalid - will store as provided');
       }
     }
+    // REMOVED: Email requirement
 
     return errors;
   };
@@ -103,26 +101,49 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
           columnIndices[field] = index;
         });
 
-        // Check if all required fields are found
-        const missingFields = Object.keys(columnIndices).filter(field => columnIndices[field] === -1);
+        // Check if essential fields are found (name, contact, pan)
+        const essentialFields = ['name', 'contact', 'pan'];
+        const missingFields = essentialFields.filter(field => columnIndices[field] === -1);
         if (missingFields.length > 0) {
-          setError(`Missing required columns: ${missingFields.join(', ')}. Please ensure your file has columns for Name, Contact, PAN, and Email.`);
+          setError(`Missing essential columns: ${missingFields.join(', ')}. Please ensure your file has columns for Name, Contact, and PAN. Email is optional.`);
           return;
         }
 
-        // Parse data rows
+        // Parse data rows - keep all characters as is
         const clients = dataRows
           .filter(row => row.some(cell => cell !== undefined && cell !== null && cell.toString().trim() !== ''))
           .map((row, index) => {
+            // Clean up values but preserve original characters
+            const rawName = row[columnIndices.name]?.toString() || '';
+            const rawContact = row[columnIndices.contact]?.toString() || '';
+            const rawPan = row[columnIndices.pan]?.toString() || '';
+            const rawEmail = row[columnIndices.email]?.toString() || '';
+
             const client = {
-              name: row[columnIndices.name]?.toString().trim() || '',
-              contact: row[columnIndices.contact]?.toString().trim() || '',
-              pan: row[columnIndices.pan]?.toString().trim().toUpperCase() || '',
-              email: row[columnIndices.email]?.toString().trim().toLowerCase() || ''
+              // Store names with all characters including brackets and commas
+              name: rawName.trim(),
+              // Keep contact as is, only remove non-digits for validation
+              contact: rawContact.trim(),
+              // Convert PAN to uppercase but keep all characters
+              pan: rawPan.toUpperCase(),
+              // Email is optional, store as provided if exists
+              email: rawEmail.trim().toLowerCase()
             };
             
             const errors = validateClientData(client);
-            return { ...client, errors, isValid: errors.length === 0 };
+            
+            // Mark as valid if only email warnings (not actual errors)
+            const hasCriticalErrors = errors.some(error => 
+              !error.includes('Email format appears invalid')
+            );
+            
+            return { 
+              ...client, 
+              errors, 
+              isValid: !hasCriticalErrors,
+              rawName, // Keep raw values for display
+              rawEmail
+            };
           });
 
         if (clients.length === 0) {
@@ -159,12 +180,12 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
     multiple: false
   });
 
-  // Import valid clients
+  // Import clients - accept all except those with critical errors
   const handleImport = async () => {
-    const validClients = parsedData.filter(client => client.isValid);
+    const clientsToImport = parsedData.filter(client => client.isValid);
 
-    if (validClients.length === 0) {
-      setError('No valid clients to import. Please fix the validation errors first.');
+    if (clientsToImport.length === 0) {
+      setError('No clients to import. Please fix the validation errors first.');
       return;
     }
 
@@ -178,18 +199,23 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
     setImportProgress(0);
     const results = { success: [], failed: [] };
 
-    for (let i = 0; i < validClients.length; i++) {
-      const client = validClients[i];
+    for (let i = 0; i < clientsToImport.length; i++) {
+      const client = clientsToImport[i];
 
       try {
         const firmId = getSafeEmail(userEmail);
         await clientHelpers.createClient(clientsRef, {
+          // Store original name with all characters
           name: client.name,
           contact: client.contact,
           pan: client.pan,
-          email: client.email,
+          // Email can be empty string if not provided
+          email: client.email || '',
           firmId,
-          isActive: true
+          isActive: true,
+          // Add metadata
+          importedViaBulk: true,
+          importTimestamp: new Date().toISOString()
         });
 
         results.success.push(client.name);
@@ -198,7 +224,7 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
         results.failed.push({ name: client.name, error: error.message });
       }
 
-      setImportProgress(((i + 1) / validClients.length) * 100);
+      setImportProgress(((i + 1) / clientsToImport.length) * 100);
     }
 
     setImportResults(results);
@@ -218,14 +244,15 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
 
   // Generate and download sample Excel file
   const downloadSampleExcel = () => {
-    // Sample data with proper format
+    // Sample data with varied formats including special characters
     const sampleData = [
       ['Name', 'Contact', 'PAN', 'Email'],
-      ['John Doe', '9876543210', 'ABCDE1234F', 'john.doe@example.com'],
-      ['Jane Smith', '8765432109', 'FGHIJ5678K', 'jane.smith@example.com'],
-      ['Robert Brown', '7654321098', 'LMNOP9012Q', 'robert.brown@example.com'],
-      ['Alice Johnson', '6543210987', 'RSTUV3456W', 'alice.johnson@example.com'],
-      ['Michael Davis', '9123456780', 'XYZAB7890C', 'michael.davis@example.com']
+      ['John Doe (Consultant)', '9876543210', 'ABCDE1234F', 'john.doe@example.com'],
+      ['M/S. Smith & Co., LLC', '8765432109', 'FGHIJ5678K', 'jane.smith@example.com'],
+      ['Robert "Bob" Brown-Jr.', '7654321098', 'LMNOP9012Q', ''],
+      ['Alice & Johnson (P) Ltd.', '6543210987', 'RSTUV3456W', 'alice@company'],
+      ['Davis, Miller & Associates', '9123456780', 'XYZAB7890C', ''],
+      ['Tech Solutions [HQ]', '9988776655', 'TECHS1234X', 'info@techsolutions.com']
     ];
 
     // Create workbook and worksheet
@@ -234,7 +261,7 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
 
     // Set column widths
     worksheet['!cols'] = [
-      { width: 20 }, // Name
+      { width: 30 }, // Name
       { width: 15 }, // Contact
       { width: 15 }, // PAN
       { width: 25 }  // Email
@@ -242,6 +269,20 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
 
     // Add worksheet to workbook
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Clients');
+
+    // Add notes about relaxed validation
+    const notesWorksheet = XLSX.utils.aoa_to_sheet([
+      ['IMPORT NOTES:'],
+      [''],
+      ['• Names can contain any characters: brackets, commas, ampersands, etc.'],
+      ['• Email is optional - leave blank if not available'],
+      ['• PAN will be converted to uppercase'],
+      ['• Contact should be 10 digits but format is flexible'],
+      [''],
+      ['Sample names with special characters are included in the data']
+    ]);
+    
+    XLSX.utils.book_append_sheet(workbook, notesWorksheet, 'Import Notes');
 
     // Generate and download file
     XLSX.writeFile(workbook, 'sample_clients.xlsx');
@@ -266,10 +307,11 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
                 <strong>📋 File Format Requirements:</strong>
                 <ul className="mb-0 mt-2">
                   <li>Excel (.xlsx, .xls) or CSV (.csv) files supported</li>
-                  <li>First row should contain headers: Name, Contact, PAN, Email</li>
-                  <li>Contact: 10-digit number starting with 6-9</li>
-                  <li>PAN: Format ABCDE1234F (5 letters + 4 digits + 1 letter)</li>
-                  <li>Email: Valid email address</li>
+                  <li>Required columns: <strong>Name, Contact, PAN</strong></li>
+                  <li><strong>Email is optional</strong> - can be left blank</li>
+                  <li>Names accept all characters: brackets, commas, etc.</li>
+                  <li>Contact: 10-digit number recommended</li>
+                  <li>PAN: Any alphanumeric format accepted</li>
                 </ul>
               </div>
               <Button 
@@ -311,8 +353,8 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
         <div>
           <div className="d-flex justify-content-between align-items-center mb-3">
             <div>
-              <Badge bg="success" className="me-2">{validCount} Valid</Badge>
-              <Badge bg="danger" className="me-2">{invalidCount} Invalid</Badge>
+              <Badge bg="success" className="me-2">{validCount} Ready to Import</Badge>
+              <Badge bg="warning" className="me-2">{invalidCount} Needs Fixing</Badge>
               <span className="text-muted">Total: {parsedData.length}</span>
             </div>
             <div>
@@ -350,21 +392,25 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
               </thead>
               <tbody>
                 {parsedData.map((client, index) => (
-                  <tr key={index} className={client.isValid ? '' : 'table-danger'}>
+                  <tr key={index} className={client.isValid ? 'table-success' : 'table-warning'}>
                     <td>{index + 1}</td>
-                    <td>{client.name}</td>
+                    <td className="font-monospace">{client.name}</td>
                     <td>{client.contact}</td>
-                    <td>{client.pan}</td>
-                    <td>{client.email}</td>
+                    <td className="text-uppercase">{client.pan}</td>
+                    <td>
+                      {client.email ? client.email : <span className="text-muted">(blank)</span>}
+                    </td>
                     <td>
                       {client.isValid ? (
-                        <Badge bg="success">✓ Valid</Badge>
+                        <Badge bg="success">✓ Ready</Badge>
                       ) : (
                         <div>
-                          <Badge bg="danger">✗ Invalid</Badge>
-                          <div className="small text-danger mt-1">
+                          <Badge bg="warning">⚠ Needs Attention</Badge>
+                          <div className="small text-muted mt-1">
                             {client.errors.map((error, i) => (
-                              <div key={i}>• {error}</div>
+                              <div key={i} className={error.includes('Email') ? 'text-info' : 'text-warning'}>
+                                • {error}
+                              </div>
                             ))}
                           </div>
                         </div>

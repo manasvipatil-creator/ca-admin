@@ -1,4 +1,4 @@
-// src/components/pages/UserManagement.js
+// src/components/pages/ClientManagement.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
@@ -13,6 +13,7 @@ import {
   Toast,
   ToastContainer,
   Badge,
+  Spinner,
 } from "react-bootstrap";
 import {
   FiUsers,
@@ -30,8 +31,16 @@ import {
   FiCheckCircle,
   FiXCircle,
   FiToggleLeft,
-  FiToggleRight
+  FiToggleRight,
+  FiUser,
+  FiFilter,
+  FiMaximize2,
+  FiFileText,
+  FiImage,
+  FiFile,
+  FiUploadCloud
 } from 'react-icons/fi';
+// LoadingBar removed
 import BulkClientImport from '../BulkClientImport';
 import { db, rtdb } from "../../firebase";
 import { doc, collection, getDocs, deleteDoc } from "firebase/firestore";
@@ -115,6 +124,8 @@ const UserManagement = ({ goToReports = () => { } }) => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteRecordInfo, setDeleteRecordInfo] = useState({ years: 0, documents: 0, total: 0 });
 
+  const [loadingProgress, setLoadingProgress] = useState(0);
+
   // 🔹 Show Toast Notification
   const showSuccessToast = (message) => {
     console.log("📢 showSuccessToast called with message:", message);
@@ -176,7 +187,7 @@ const UserManagement = ({ goToReports = () => { } }) => {
       .trim()
       .toLowerCase()
       .replace(/[.#$\[\]/]/g, "")
-      .replace(/\s+/g, "_") + (year ? `_${year}` : "");
+      .replace(/\s+/g, "_") + (year ? `_${year} ` : "");
 
   // 🔹 Subscribe to users with real-time updates from Firestore
   useEffect(() => {
@@ -235,29 +246,9 @@ const UserManagement = ({ goToReports = () => { } }) => {
     };
   }, [userEmail, getUserClientsRef]);
 
-  // 🔹 Deduplicate and filter users
-  const deduplicatedusers = React.useMemo(() => users.reduce((acc, User) => {
-    // Use name + PAN as unique identifier to prevent duplicates
-    const uniqueKey = `${User.name?.toLowerCase()}_${User.pan?.toLowerCase()}`;
-
-    if (!acc[uniqueKey]) {
-      acc[uniqueKey] = User;
-    } else {
-      // If duplicate found, merge documents from both entries
-      const existing = acc[uniqueKey];
-      if (User.documents && existing.documents) {
-        // Merge documents from both User entries
-        existing.documents = { ...existing.documents, ...User.documents };
-      } else if (User.documents && !existing.documents) {
-        existing.documents = User.documents;
-      }
-      console.log(`🔄 Merged duplicate User: ${User.name} (${User.pan})`);
-    }
-
-    return acc;
-  }, {}), [users]);
-
-  const uniqueusers = React.useMemo(() => Object.values(deduplicatedusers), [deduplicatedusers]);
+  // 🔹 Deduplicate users (Trust Firestore IDs for uniqueness)
+  // We remove the aggressive Name/PAN deduplication which was hiding distinct database records.
+  const uniqueusers = React.useMemo(() => users, [users]);
 
   const filteredusers = React.useMemo(() => uniqueusers.filter((User) => {
     const matchesSearch =
@@ -273,7 +264,7 @@ const UserManagement = ({ goToReports = () => { } }) => {
         Object.values(User.documents).some((doc) => doc.year === filterYear));
 
     return matchesSearch && matchesYear;
-  }), [uniqueusers, searchTerm, filterYear]);
+  }).sort((a, b) => (a.name || "").localeCompare(b.name || "")), [uniqueusers, searchTerm, filterYear]);
 
   // Check if search term matches an inactive client's PAN
   const inactiveClientMatch = React.useMemo(() => searchTerm && uniqueusers.find(
@@ -318,27 +309,36 @@ const UserManagement = ({ goToReports = () => { } }) => {
       const results = await Promise.all(
         clientsToFetch.map(async (user) => {
           try {
-            const clientDocRef = getClientDocRef(user.id);
-            if (!clientDocRef) return { id: user.id, years: 0, genericDocs: 0 };
+            // 1. YEARS count: Trust the 'years' array on the client document (fast & consistent with YearManagement)
+            const yearsCount = Array.isArray(user.years) ? user.years.length : 0;
 
-            const yearsRef = collection(clientDocRef, 'years');
-            const genericRef = collection(clientDocRef, 'genericDocuments');
+            // 2. DOCS count: Fetch generic documents subcollection
+            let genericDocsCount = 0;
+            const safeEmail = getSafeEmail(userEmail);
 
-            // 1. Fetch years snapshot and generic documents snapshot
-            const [yearsSnap, genericSnap] = await Promise.all([
-              getDocs(yearsRef),
-              getDocs(genericRef)
-            ]);
+            if (safeEmail && user.id) {
+              const clientDocRef = doc(db, 'ca_admin', safeEmail, 'clients', user.id);
+              const genericRef = collection(clientDocRef, 'genericDocuments');
+              const genericSnap = await getDocs(genericRef);
+              genericDocsCount = genericSnap.size;
+            }
 
-            // 3. Return counts (Generic Docs only for the specific button)
+            console.log(`📊 Counts for ${user.name}: Years=${yearsCount} (from array), Docs=${genericDocsCount}`);
+
             return {
               id: user.id,
-              years: yearsSnap.size,
-              genericDocs: genericSnap.size
+              years: yearsCount,
+              genericDocs: genericDocsCount
             };
           } catch (error) {
-            console.error(`❌ Error fetching counts for ${user.id}:`, error);
-            return { id: user.id, years: 0, genericDocs: 0, error: true };
+            console.error(`❌ Error fetching counts for ${user.id}: `, error);
+            // Fallback: show 0 if error, but try to keep years from prop if possible
+            return {
+              id: user.id,
+              years: Array.isArray(user.years) ? user.years.length : 0,
+              genericDocs: 0,
+              error: true
+            };
           }
         })
       );
@@ -459,7 +459,7 @@ const UserManagement = ({ goToReports = () => { } }) => {
       setShowForm(false);
     } catch (e) {
       console.error("❌ Failed to save Client", e);
-      showErrorToast(`❌ Failed to save client: ${e.message}`);
+      showErrorToast(`❌ Failed to save client: ${e.message} `);
     } finally {
       setIsSavingClient(false);
     }
@@ -490,135 +490,368 @@ const UserManagement = ({ goToReports = () => { } }) => {
     if (!deleteTarget) return;
 
     const { client: target } = deleteTarget;
-    const { total: totalRecords } = deleteRecordInfo;
 
     setIsDeletingClient(true);
-    setIsDeletingClient(true);
-    // Modal will remain open while deleting
 
+    // ⚡ OPTIMISTIC UPDATE: Remove from UI immediately
+    setusers(prevUsers => prevUsers.filter(user =>
+      user.id !== target.id &&
+      user.contact !== target.contact &&
+      user.pan !== target.pan
+    ));
+    setShowDeleteModal(false); // Close modal immediately
+
+    // ⚡ INSTANT FEEDBACK: Show success toast immediately
+    showSuccessToast("Client \"" + target.name + "\" has been deleted.");
+
+    // Start Loading Spinner
+    setLoadingProgress(30);
 
     try {
       console.log("🗑️ Starting client deletion process for:", target.name);
-      console.log("📋 Client data:", {
-        id: target.id,
-        contact: target.contact,
-        pan: target.pan,
-        name: target.name
-      });
 
-      // Delete from RTDB (old structure) if exists
+      const safeEmail = getSafeEmail(userEmail);
+      if (!safeEmail) {
+        throw new Error("Cannot determine user email path");
+      }
+
+      // 1. FIRST DELETE FROM FIRESTORE
+      let deletedFromFirestore = false;
+
+      try {
+        if (target.id) {
+          console.log("🗑️ Attempting to delete client with ID:", target.id);
+          const clientDocRef = doc(db, "ca_admin", safeEmail, "clients", target.id);
+
+          await clientHelpers.deleteClient(clientDocRef);
+          deletedFromFirestore = true;
+          console.log("✅ Deleted from Firestore using direct ID");
+        }
+
+        if (!deletedFromFirestore) {
+          console.warn("⚠️ Direct deletion failed or no ID. Trying fallback IDs...");
+          const possibleIds = [
+            target.contact ? target.contact.replace(/\D/g, '') : null,
+            target.pan
+          ].filter(Boolean);
+
+          for (const docId of possibleIds) {
+            if (docId === target.id) continue;
+            try {
+              const docRef = doc(db, "ca_admin", safeEmail, "clients", docId);
+              await clientHelpers.deleteClient(docRef);
+              console.log("✅ Deleted with fallback ID:", docId);
+              deletedFromFirestore = true;
+              break;
+            } catch (err) {
+              console.log("⚠️ Fallback failed for", docId, ":", err.message);
+            }
+          }
+        }
+      } catch (firestoreError) {
+        console.error("❌ Firestore error:", firestoreError);
+      }
+
+      // ⚡ IMMEDIATE UI UNBLOCK: Hide spinner now that primary DB record is gone.
+      // We let Storage and RTDB cleanup continue in the "background" without blocking the user.
+      setLoadingProgress(0);
+
+      // 2. DELETE STORAGE FILES
+      try {
+        const storage = getStorage();
+        const deleteStoragePath = async (path) => {
+          try {
+            const folderRef = storageRef(storage, path);
+            const fileList = await listAll(folderRef);
+            const deletePromises = fileList.items.map(itemRef =>
+              deleteObject(itemRef).catch(err =>
+                console.warn("⚠️ Could not delete file " + itemRef.fullPath + ":", err.message)
+              )
+            );
+            for (const subFolderRef of fileList.prefixes) {
+              await deleteStoragePath(subFolderRef.fullPath);
+            }
+            await Promise.all(deletePromises);
+            console.log("✅ Deleted storage path:", path);
+            return true;
+          } catch (error) {
+            console.log("ℹ️ Storage path " + path + " not found or empty:", error.message);
+            return false;
+          }
+        };
+
+        const storagePaths = [
+          "documents/" + target.name,
+          "documents/" + target.contact,
+          "documents/" + target.pan,
+          safeEmail + "/clients/" + target.contact,
+          safeEmail + "/clients/" + target.pan,
+          safeEmail + "/clients/" + target.id,
+        ].filter(path => path && !path.includes('undefined'));
+
+        for (const path of storagePaths) {
+          await deleteStoragePath(path);
+        }
+      } catch (storageError) {
+        console.warn("⚠️ Storage cleanup warning:", storageError);
+      }
+
+      // 3. DELETE FROM REALTIME DATABASE (if exists)
       try {
         const userClientPath = getUserClientPath();
         if (userClientPath) {
-          const clientContact = target.contact || target.id;
-          const rtdbClientRef = ref(rtdb, `${userClientPath}/${clientContact}`);
-          await remove(rtdbClientRef);
-          console.log("✅ Deleted client data from RTDB");
-        }
-      } catch (rtdbError) {
-        console.warn("⚠️ RTDB cleanup had issues:", rtdbError);
-      }
+          const possibleKeys = [
+            target.contact,
+            target.pan,
+            target.id,
+            target.name ? target.name.toLowerCase().replace(/\s+/g, '_') : null
+          ].filter(Boolean);
 
-      // Delete all files from Firebase Storage for this client
-      try {
-        const storage = getStorage();
-        const clientName = target.name || target.id;
-        const clientContact = target.contact || target.id;
-
-        // Try to delete from multiple possible storage paths
-        const possiblePaths = [
-          `documents/${clientName}`,
-          `documents/${clientContact}`,
-          `${getSafeEmail(userEmail)}/clients/${clientContact}`,
-        ];
-
-        for (const path of possiblePaths) {
-          try {
-            console.log("🔍 Checking storage path:", path);
-            const folderRef = storageRef(storage, path);
-            const fileList = await listAll(folderRef);
-
-            // Delete all files in the folder
-            for (const itemRef of fileList.items) {
-              try {
-                await deleteObject(itemRef);
-                console.log("✅ Deleted file:", itemRef.fullPath);
-              } catch (fileError) {
-                console.warn("⚠️ Could not delete file:", itemRef.fullPath, fileError);
-              }
+          for (const key of possibleKeys) {
+            try {
+              const rtdbRef = ref(rtdb, userClientPath + "/" + key);
+              await remove(rtdbRef);
+              console.log("✅ Deleted from RTDB path:", userClientPath + "/" + key);
+            } catch (rtdbError) {
+              console.log("ℹ️ RTDB path " + key + " not found:", rtdbError.message);
             }
-
-            // Recursively delete subfolders
-            for (const folderRef of fileList.prefixes) {
-              try {
-                const subFileList = await listAll(folderRef);
-                for (const itemRef of subFileList.items) {
-                  try {
-                    await deleteObject(itemRef);
-                    console.log("✅ Deleted file:", itemRef.fullPath);
-                  } catch (fileError) {
-                    console.warn("⚠️ Could not delete file:", itemRef.fullPath, fileError);
-                  }
-                }
-              } catch (subFolderError) {
-                console.warn("⚠️ Could not access subfolder:", folderRef.fullPath, subFolderError);
-              }
-            }
-
-            console.log("✅ Cleaned up storage path:", path);
-          } catch (pathError) {
-            console.log("ℹ️ Path not found or empty:", path);
           }
         }
-      } catch (storageError) {
-        console.warn("⚠️ Storage cleanup had issues:", storageError);
-        // Continue with Firestore deletion even if storage cleanup fails
+      } catch (rtdbError) {
+        console.warn("⚠️ RTDB cleanup warning:", rtdbError);
       }
 
-      // Delete from Firestore using client contact as document ID
-      const clientDocRef = getClientDocRef(target.id);
-      if (!clientDocRef) {
-        showErrorToast(
-          "❌ Unable to get client reference. Please try again."
-        );
-        return;
-      }
-
-      await clientHelpers.deleteClient(clientDocRef);
-
-      // Force delete the specific document path requested by user to ensure cleanup
-      // Path: ca_admin/{safeEmail}/clients/{contact}
-      try {
-        const safeEmail = getSafeEmail(userEmail);
-        const contactId = target.contact ? target.contact.replace(/\D/g, '') : target.id;
-
-        if (safeEmail && contactId) {
-          console.log(`🗑️ Force cleanup checking: ca_admin/${safeEmail}/clients/${contactId}`);
-          const specificDocRef = doc(db, "ca_admin", safeEmail, "clients", contactId);
-          await deleteDoc(specificDocRef);
-          console.log("✅ Force cleanup executed for client document");
-        }
-      } catch (forceError) {
-        console.warn("⚠️ Force cleanup warning (might have already been deleted):", forceError);
-      }
-
-      // Clear the deleted client from clientCounts state
+      // 4. CLEAN UP LOCAL STATE
       setClientCounts(prevCounts => {
         const newCounts = { ...prevCounts };
         delete newCounts[target.id];
+        delete newCounts[target.pan];
         return newCounts;
       });
 
-      showSuccessToast(`Client "${target.name}" deleted successfully! ${totalRecords} ${totalRecords === 1 ? 'record' : 'records'} removed.`);
-      console.log("✅ Client deletion completed successfully");
+      if (selectedUser?.id === target.id) {
+        setShowYearModal(false);
+        setSelectedUser(null);
+      }
+      if (docsUser?.id === target.id) {
+        setShowDocs(false);
+        setDocsUser(null);
+      }
+      setShowPreviewModal(false);
+
+      console.log("✅ Client deletion process completed");
     } catch (e) {
-      console.error("❌ Failed to delete client", e);
-      showErrorToast(`❌ Failed to delete client: ${e.message}`);
+      console.error("❌ Critical deletion error:", e);
+      let errorMessage = "Failed to delete client";
+      if (e.message.includes('permission')) {
+        errorMessage = "Permission denied.";
+      } else if (e.message.includes('network')) {
+        errorMessage = "Network error.";
+      }
+      showErrorToast("❌ " + errorMessage);
+      showErrorToast("❌ " + errorMessage);
+      setLoadingProgress(0);
     } finally {
       setIsDeletingClient(false);
-      setShowDeleteModal(false); // Close modal only after completion
+      setShowDeleteModal(false);
     }
   };
+
+  //   const confirmDelete = async () => {
+  //     if (!deleteTarget) return;
+
+  //     const { client: target } = deleteTarget;
+  //     const { total: totalRecords } = deleteRecordInfo;
+
+  //     setIsDeletingClient(true);
+  //     setIsDeletingClient(true);
+  //     // Modal will remain open while deleting
+
+
+  //     try {
+  //       console.log("🗑️ Starting client deletion process for:", target.name);
+  //       console.log("📋 Client data:", {
+  //         id: target.id,
+  //         contact: target.contact,
+  //         pan: target.pan,
+  //         name: target.name
+  //       });
+
+  //       // Delete from RTDB (old structure) if exists
+  //       // Delete from RTDB (old structure) if exists
+  //       /* 
+  //       try {
+  //         const userClientPath = getUserClientPath();
+  //         if (userClientPath) {
+  //           const clientContact = target.contact || target.id;
+  //           const rtdbClientRef = ref(rtdb, `${ userClientPath }/${clientContact}`);
+  //           await remove(rtdbClientRef);
+  //           console.log("✅ Deleted client data from RTDB");
+  //         }
+  //       } catch (rtdbError) {
+  //         console.warn("⚠️ RTDB cleanup had issues:", rtdbError);
+  //       }
+  //       */
+
+  //       // Delete all files from Firebase Storage for this client
+  //       try {
+  //         const storage = getStorage();
+  //         const clientName = target.name || target.id;
+  //         const clientContact = target.contact || target.id;
+
+  //         // Try to delete from multiple possible storage paths
+  //         const possiblePaths = [
+  //           `documents/${clientName}`,
+  //           `documents/${clientContact}`,
+  //           `${getSafeEmail(userEmail)}/clients/${clientContact}`,
+  //         ];
+
+  //         for (const path of possiblePaths) {
+  //           try {
+  //             console.log("🔍 Checking storage path:", path);
+  //             const folderRef = storageRef(storage, path);
+  //             const fileList = await listAll(folderRef);
+
+  //             // Delete all files in the folder
+  //             for (const itemRef of fileList.items) {
+  //               try {
+  //                 await deleteObject(itemRef);
+  //                 console.log("✅ Deleted file:", itemRef.fullPath);
+  //               } catch (fileError) {
+  //                 console.warn("⚠️ Could not delete file:", itemRef.fullPath, fileError);
+  //               }
+  //             }
+
+  //             // Recursively delete subfolders
+  //             for (const folderRef of fileList.prefixes) {
+  //               try {
+  //                 const subFileList = await listAll(folderRef);
+  //                 for (const itemRef of subFileList.items) {
+  //                   try {
+  //                     await deleteObject(itemRef);
+  //                     console.log("✅ Deleted file:", itemRef.fullPath);
+  //                   } catch (fileError) {
+  //                     console.warn("⚠️ Could not delete file:", itemRef.fullPath, fileError);
+  //                   }
+  //                 }
+  //               } catch (subFolderError) {
+  //                 console.warn("⚠️ Could not access subfolder:", folderRef.fullPath, subFolderError);
+  //               }
+  //             }
+
+  //             console.log("✅ Cleaned up storage path:", path);
+  //           } catch (pathError) {
+  //             console.log("ℹ️ Path not found or empty:", path);
+  //           }
+  //         }
+  //       } catch (storageError) {
+  //         console.warn("⚠️ Storage cleanup had issues:", storageError);
+  //         // Continue with Firestore deletion even if storage cleanup fails
+  //       }
+
+  //     try {
+  //   // Get the correct client ID - check what identifier you're actually using
+  //   const clientId = target.id || target.pan || target.contact;
+
+  //   if (!clientId) {
+  //     showErrorToast("❌ Cannot identify client for deletion.");
+  //     return;
+  //   }
+
+  //   // Method 1: Use your clientHelpers
+  //   const clientDocRef = getClientDocRef(clientId);
+  //   if (clientDocRef) {
+  //     await clientHelpers.deleteClient(clientDocRef);
+  //     console.log("✅ Client deleted from Firestore via clientHelpers");
+  //   }
+
+  //   // Method 2: Direct Firestore deletion (as fallback)
+  //   const safeEmail = getSafeEmail(userEmail);
+  //   if (safeEmail) {
+  //     // Try multiple possible ID formats
+  //     const possibleIds = [
+  //       clientId,
+  //       target.pan,
+  //       target.contact?.replace(/\D/g, ''),
+  //       target.name?.toLowerCase().replace(/\s+/g, '_')
+  //     ].filter(Boolean);
+
+  //     for (const id of possibleIds) {
+  //       try {
+  //         const clientDocPath = doc(db, "ca_admin", safeEmail, "clients", id);
+  //         await deleteDoc(clientDocPath);
+  //         console.log(`✅ Deleted from Firestore path: clients/${id}`);
+  //       } catch (err) {
+  //         // Document might not exist at this path, continue
+  //       }
+  //     }
+  //   }
+
+  //   // Method 3: Delete from Realtime Database if still used
+  //   try {
+  //     const userClientPath = getUserClientPath();
+  //     if (userClientPath) {
+  //       // Try different keys
+  //       const possibleKeys = [
+  //         target.contact,
+  //         target.pan,
+  //         target.name?.toLowerCase().replace(/\s+/g, '_')
+  //       ].filter(Boolean);
+
+  //       for (const key of possibleKeys) {
+  //         try {
+  //           const rtdbRef = ref(rtdb, `${userClientPath}/${key}`);
+  //           await remove(rtdbRef);
+  //           console.log(`✅ Deleted from RTDB: ${key}`);
+  //         } catch (rtdbErr) {
+  //           // Continue
+  //         }
+  //       }
+  //     }
+  //   } catch (rtdbError) {
+  //     console.warn("⚠️ RTDB cleanup warning:", rtdbError);
+  //   }
+  // } catch (firestoreError) {
+  //   console.error("❌ Firestore deletion error:", firestoreError);
+  //   showErrorToast(`❌ Failed to delete from database: ${firestoreError.message}`);
+  //   return;
+  // }
+
+  //       await clientHelpers.deleteClient(clientDocRef);
+
+  //       // Force delete the specific document path requested by user to ensure cleanup
+  //       // Path: ca_admin/{safeEmail}/clients/{contact}
+  //       try {
+  //         const safeEmail = getSafeEmail(userEmail);
+  //         const contactId = target.contact ? target.contact.replace(/\D/g, '') : target.id;
+
+  //         if (safeEmail && contactId) {
+  //           console.log(`🗑️ Force cleanup checking: ca_admin/${safeEmail}/clients/${contactId}`);
+  //           const specificDocRef = doc(db, "ca_admin", safeEmail, "clients", contactId);
+  //           await deleteDoc(specificDocRef);
+  //           console.log("✅ Force cleanup executed for client document");
+  //         }
+  //       } catch (forceError) {
+  //         console.warn("⚠️ Force cleanup warning (might have already been deleted):", forceError);
+  //       }
+
+  //       // Clear the deleted client from clientCounts state
+  //       setClientCounts(prevCounts => {
+  //         const newCounts = { ...prevCounts };
+  //         delete newCounts[target.id];
+  //         return newCounts;
+  //       });
+
+  //       showSuccessToast(`Client "${target.name}" deleted successfully! ${totalRecords} ${totalRecords === 1 ? 'record' : 'records'} removed.`);
+  //       console.log("✅ Client deletion completed successfully");
+  //     } catch (e) {
+  //       console.error("❌ Failed to delete client", e);
+  //       showErrorToast(`❌ Failed to delete client: ${e.message}`);
+  //     } finally {
+  //       setIsDeletingClient(false);
+  //       setShowDeleteModal(false); // Close modal only after completion
+  //     }
+  //   };
 
   const handleToggleActive = async (client) => {
     const target = client;
@@ -790,935 +1023,454 @@ const UserManagement = ({ goToReports = () => { } }) => {
 
   return (
     <div style={{
-      padding: '24px',
-      background: '#f8f9fa',
+      padding: '16px 24px',
+      background: '#f1f5f9', // Slate-100
       minHeight: '100vh',
-      width: '100%'
+      width: '100%',
+      fontFamily: "'Inter', sans-serif"
     }}>
-      {/* Simple Clean Header */}
-      <div style={{
+      {loadingProgress > 0 && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          zIndex: 99999,
+          background: 'rgba(255, 255, 255, 0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column'
+        }}>
+          <Spinner animation="border" variant="primary" role="status" style={{ width: '3rem', height: '3rem', borderWidth: '4px' }}>
+            <span className="visually-hidden">Loading...</span>
+          </Spinner>
+          <div className="mt-3 fw-bold text-primary">Processing...</div>
+        </div>
+      )}
+      {/* 🔹 Compact Header & Actions Row */}
+      <div className="d-flex justify-content-between align-items-center mb-3" style={{
         background: 'white',
-        borderRadius: '12px',
-        padding: '24px 32px',
-        marginBottom: '24px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
-        borderLeft: '4px solid #6366f1',
+        borderRadius: '8px',
+        padding: '12px 20px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        border: '1px solid #e2e8f0'
       }}>
-        <div className="d-flex justify-content-between align-items-center">
-          <div className="d-flex align-items-center gap-3">
-            <div style={{
-              background: '#6366f1',
-              borderRadius: '12px',
-              padding: '12px',
+        <div className="d-flex align-items-center gap-3">
+          <div style={{
+            background: 'linear-gradient(135deg, #4f46e5 0%, #4338ca 100%)',
+            borderRadius: '8px',
+            padding: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)'
+          }}>
+            <FiUsers size={20} color="white" />
+          </div>
+          <div>
+            <h5 className="mb-0" style={{ color: '#0f172a', fontWeight: '700', fontSize: '1.1rem' }}>
+              Client Management
+            </h5>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '2px' }}>
+              <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+                Total: <strong>{totalItems}</strong> clients
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="d-flex gap-2">
+          <Button
+            size="sm"
+            onClick={() => setShowBulkImportModal(true)}
+            variant="outline-secondary"
+            style={{
+              fontSize: '0.85rem',
+              fontWeight: '500',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <FiUsers size={28} color="white" />
-            </div>
-            <div>
-              <h2 className="mb-1" style={{
-                color: '#1e293b',
-                fontWeight: '700',
-                fontSize: '1.5rem'
-              }}>
-                Client Management
-              </h2>
-              <p className="mb-0" style={{
-                color: '#64748b',
-                fontSize: '0.9rem'
-              }}>
-                Manage your clients and their information
-              </p>
-            </div>
-          </div>
-          <div className="d-flex gap-3">
-            <Button
-              onClick={() => setShowBulkImportModal(true)}
-              style={{
-                background: 'white',
-                border: '2px solid #e5e7eb',
-                borderRadius: '10px',
-                padding: '10px 20px',
-                color: '#64748b',
-                fontWeight: '600',
-                fontSize: '0.9rem',
-                transition: 'all 0.3s ease',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.borderColor = '#6366f1';
-                e.target.style.color = '#6366f1';
-                e.target.style.transform = 'translateY(-2px)';
-                e.target.style.boxShadow = '0 4px 12px rgba(99,102,241,0.15)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.borderColor = '#e5e7eb';
-                e.target.style.color = '#64748b';
-                e.target.style.transform = 'translateY(0)';
-                e.target.style.boxShadow = 'none';
-              }}
-            >
-              <FiDownload size={18} />
-              <span>Import Excel</span>
-            </Button>
-            <Button
-              onClick={handleNew}
-              style={{
-                background: '#6366f1',
-                border: 'none',
-                borderRadius: '10px',
-                padding: '10px 20px',
-                color: 'white',
-                fontWeight: '600',
-                fontSize: '0.9rem',
-                boxShadow: '0 4px 12px rgba(99,102,241,0.3)',
-                transition: 'all 0.3s ease',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-              onMouseEnter={(e) => {
-                e.target.style.background = '#4f46e5';
-                e.target.style.transform = 'translateY(-2px)';
-                e.target.style.boxShadow = '0 6px 16px rgba(99,102,241,0.4)';
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.background = '#6366f1';
-                e.target.style.transform = 'translateY(0)';
-                e.target.style.boxShadow = '0 4px 12px rgba(99,102,241,0.3)';
-              }}
-            >
-              <FiUserPlus size={18} />
-              <span>Add New Client</span>
-            </Button>
-          </div>
+              gap: '6px',
+            }}
+          >
+            <FiDownload size={14} /> Import
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleNew}
+            style={{
+              background: '#4f46e5',
+              borderColor: '#4f46e5',
+              fontSize: '0.85rem',
+              fontWeight: '500',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)'
+            }}
+          >
+            <FiUserPlus size={14} /> Add Client
+          </Button>
         </div>
       </div>
 
-      {/* 🔹 Form */}
+      {/* 🔹 Form (kept mostly same but container tighter) */}
       {showForm && (
-        <div style={{ background: 'white', borderRadius: 12, padding: 16, boxShadow: '0 1px 6px rgba(0,0,0,0.06)', marginBottom: 18 }}>
-          <Card className="mb-4 shadow-sm">
-            <Card.Body>
-              <Row>
+        <Card className="mb-3 border-0 shadow-sm" style={{ borderRadius: '8px' }}>
+          <Card.Body className="p-3">
+            <h6 className="mb-3 text-primary fw-bold" style={{ fontSize: '0.95rem' }}>{editIndex !== null ? 'Edit Client' : 'New Client Details'}</h6>
+            <Form>
+              <Row className="g-2">
                 <Col md={3}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>User Name *</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      placeholder="Enter User name"
-                      required
-                    />
+                  <Form.Group>
+                    <Form.Label className="small fw-semibold text-muted mb-1">Client Name *</Form.Label>
+                    <Form.Control size="sm" type="text" name="name" value={formData.name} onChange={handleChange} placeholder="Enter name" required />
                   </Form.Group>
                 </Col>
                 <Col md={2}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Year *</Form.Label>
-                    <Form.Control
-                      type="number"
-                      name="year"
-                      value={formData.year}
-                      onChange={handleChange}
-                      placeholder="2024"
-                      min="1900"
-                      max="2100"
-                      required
-                    />
+                  <Form.Group>
+                    <Form.Label className="small fw-semibold text-muted mb-1">Year *</Form.Label>
+                    <Form.Control size="sm" type="number" name="year" value={formData.year} onChange={handleChange} placeholder="2024" />
+                  </Form.Group>
+                </Col>
+                <Col md={2}>
+                  <Form.Group>
+                    <Form.Label className="small fw-semibold text-muted mb-1">Contact</Form.Label>
+                    <Form.Control size="sm" type="text" name="contact" value={formData.contact} onChange={handleChange} placeholder="Phone" />
+                  </Form.Group>
+                </Col>
+                <Col md={2}>
+                  <Form.Group>
+                    <Form.Label className="small fw-semibold text-muted mb-1">PAN</Form.Label>
+                    <Form.Control size="sm" type="text" name="pan" value={formData.pan} onChange={handleChange} placeholder="PAN Number" />
                   </Form.Group>
                 </Col>
                 <Col md={3}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Contact</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="contact"
-                      value={formData.contact}
-                      onChange={handleChange}
-                      placeholder="Phone number"
-                    />
-                  </Form.Group>
-                </Col>
-                <Col md={3}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>PAN</Form.Label>
-                    <Form.Control
-                      type="text"
-                      name="pan"
-                      value={formData.pan}
-                      onChange={handleChange}
-                      placeholder="ABCDE1234F"
-                    />
-                  </Form.Group>
-                </Col>
-                <Col md={3}>
-                  <Form.Group className="mb-3">
-                    <Form.Label>Email</Form.Label>
-                    <Form.Control
-                      type="email"
-                      name="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      placeholder="name@example.com"
-                    />
+                  <Form.Group>
+                    <Form.Label className="small fw-semibold text-muted mb-1">Email</Form.Label>
+                    <Form.Control size="sm" type="email" name="email" value={formData.email} onChange={handleChange} placeholder="Email" />
                   </Form.Group>
                 </Col>
               </Row>
-              <div className="d-flex justify-content-end gap-2">
-                <Button variant="secondary" onClick={() => setShowForm(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleAddOrUpdate}
-                  variant="primary"
-                  disabled={isSavingClient}
-                >
-                  {isSavingClient ? (
-                    <>
-                      <span
-                        className="spinner-border spinner-border-sm me-2"
-                        role="status"
-                        aria-hidden="true"
-                      ></span>
-                      {editIndex !== null ? "Updating..." : "Adding..."}
-                    </>
-                  ) : editIndex !== null ? (
-                    "Update User"
-                  ) : (
-                    "Add User"
-                  )}
+              <div className="d-flex justify-content-end gap-2 mt-3">
+                <Button size="sm" variant="light" onClick={() => setShowForm(false)}>Cancel</Button>
+                <Button size="sm" onClick={handleAddOrUpdate} disabled={isSavingClient}>
+                  {isSavingClient ? 'Saving...' : (editIndex !== null ? "Update" : "Save")}
                 </Button>
               </div>
-            </Card.Body>
-          </Card>
-        </div>
+            </Form>
+          </Card.Body>
+        </Card>
       )}
 
-      {/* Modern Search and Filter Card */}
-      <Card style={{
-        border: 'none',
-        borderRadius: '16px',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-        marginBottom: '24px',
-      }}>
-        <Card.Body style={{ padding: '24px' }}>
-          <Row className="g-3 align-items-center">
-            <Col md={6}>
-              <div style={{ position: 'relative' }}>
-                <FiSearch
-                  size={20}
-                  style={{
-                    position: 'absolute',
-                    left: '16px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    color: '#667eea',
-                    zIndex: 1,
-                  }}
-                />
-                <Form.Control
-                  type="text"
-                  placeholder="Search users by name, contact, PAN, or email..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  style={{
-                    paddingLeft: '48px',
-                    paddingRight: '16px',
-                    height: '48px',
-                    border: '2px solid #e9ecef',
-                    borderRadius: '12px',
-                    fontSize: '0.95rem',
-                    transition: 'all 0.3s ease',
-                  }}
-                  onFocus={(e) => {
-                    e.target.style.borderColor = '#667eea';
-                    e.target.style.boxShadow = '0 0 0 4px rgba(102, 126, 234, 0.1)';
-                  }}
-                  onBlur={(e) => {
-                    e.target.style.borderColor = '#e9ecef';
-                    e.target.style.boxShadow = 'none';
-                  }}
-                />
-              </div>
-            </Col>
-            <Col md={6} className="d-flex align-items-center justify-content-end gap-3">
-              <div className="d-flex align-items-center gap-2">
-                <span style={{ fontSize: '0.9rem', color: '#64748b' }}>Show</span>
-                <Form.Select
-                  size="sm"
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value) || 10)}
-                  style={{
-                    width: '80px',
-                    border: '2px solid #e9ecef',
-                    borderRadius: '8px',
-                    fontSize: '0.9rem',
-                    padding: '6px 12px',
-                  }}
-                >
-                  <option value={5}>5</option>
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                </Form.Select>
-                <span style={{ fontSize: '0.9rem', color: '#64748b' }}>per page</span>
-              </div>
-              <div style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: 'white',
-                padding: '8px 16px',
-                borderRadius: '10px',
-                fontSize: '0.9rem',
-                fontWeight: '600',
-              }}>
-                {pageusers.length} of {totalItems} users
-              </div>
-            </Col>
-          </Row>
-          {inactiveClientMatch && (
-            <Row className="mt-2">
-              <Col>
-                <Alert variant="warning" className="mb-0 py-2">
-                  ⚠️ <strong>Client Inactive:</strong> The client with PAN <strong>{inactiveClientMatch.pan}</strong> ({inactiveClientMatch.name}) is currently inactive.
-                </Alert>
-              </Col>
-            </Row>
-          )}
-        </Card.Body>
-      </Card>
-
-      {/* Modern Professional Table */}
-      <Card style={{
-        border: 'none',
-        borderRadius: '20px',
-        boxShadow: '0 10px 40px rgba(0,0,0,0.08)',
-        overflow: 'hidden',
+      {/* 🔹 Compact Search & Filter Bar */}
+      <div className="mb-3" style={{
         background: 'white',
+        borderRadius: '8px',
+        padding: '8px 16px',
+        border: '1px solid #e2e8f0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '16px'
       }}>
-        <div className="table-responsive">
-          <Table hover className="mb-0" style={{
-            fontSize: "0.9rem",
-            tableLayout: "fixed",
-            marginBottom: 0,
-          }}>
-            <colgroup>
-              <col style={{ width: "4%" }} />
-              <col style={{ width: "15%" }} />
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "12%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "20%" }} />
-            </colgroup>
-            <thead style={{
-              background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)',
-              color: 'white',
-            }}>
+        <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
+          <FiSearch size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+          <Form.Control
+            type="text"
+            size="sm"
+            placeholder="Search clients..."
+            value={searchTerm}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            style={{ paddingLeft: '36px', borderRadius: '6px', fontSize: '0.9rem', border: '1px solid #cbd5e1' }}
+          />
+        </div>
+
+        <div className="d-flex align-items-center gap-3">
+          {inactiveClientMatch && (
+            <Badge bg="warning" text="dark" className="d-flex align-items-center gap-1 px-2 py-1">
+              ⚠️ Found Inactive: {inactiveClientMatch.name}
+            </Badge>
+          )}
+
+          <div className="d-flex align-items-center gap-2">
+            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>Rows:</span>
+            <Form.Select
+              size="sm"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value) || 10)}
+              style={{ width: '70px', fontSize: '0.85rem' }}
+            >
+              <option value={5}>5</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+            </Form.Select>
+          </div>
+        </div>
+      </div>
+
+      {/* 🔹 Dense Professional Table */}
+      <Card className="border-0 shadow-sm" style={{ borderRadius: '8px', overflow: 'hidden' }}>
+        <Table hover responsive className="align-middle mb-0" style={{ fontSize: '0.85rem' }}>
+          <thead style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+            <tr>
+              <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '4%' }}>Sr No.</th>
+              <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '20%' }}>Client Name</th>
+              <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '15%' }}>Contact Info</th>
+              <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>PAN</th>
+              <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Status</th>
+              <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Years</th>
+              <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Docs</th>
+              <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '15%' }}>Actions</th>
+            </tr>
+          </thead >
+          <tbody>
+            {isLoadingClients ? (
               <tr>
-                <th style={{
-                  padding: "20px 12px",
-                  fontWeight: "700",
-                  fontSize: "0.75rem",
-                  border: "none",
-                  letterSpacing: "1px",
-                  textAlign: "center",
-                  textTransform: "uppercase",
-                }}>
-                  <span>Sr</span>
-                </th>
-                <th style={{
-                  padding: "16px 12px",
-                  fontWeight: "500",
-                  fontSize: "0.75rem",
-                  border: "none",
-                  letterSpacing: "0.3px",
-                  textTransform: "uppercase",
-                }}>
-                  <div className="d-flex align-items-center gap-2">
-                    <FiUsers size={16} />
-                    <span>Client Name</span>
+                <td
+                  colSpan="8"
+                  className="text-center py-5"
+                  style={{ color: "#64748b" }}
+                >
+                  <div className="d-flex flex-column align-items-center">
+                    <div className="spinner-border text-primary mb-2" role="status" style={{ width: "2rem", height: "2rem" }}>
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <div className="small">Loading clients...</div>
                   </div>
-                </th>
-                <th style={{
-                  padding: "16px 12px",
-                  fontWeight: "600",
-                  fontSize: "0.85rem",
-                  border: "none",
-                  letterSpacing: "0.3px",
-                }}>
-                  <div className="d-flex align-items-center gap-2">
-                    <FiPhone size={16} />
-                    <span>CONTACT</span>
-                  </div>
-                </th>
-                <th style={{
-                  padding: "16px 12px",
-                  fontWeight: "600",
-                  fontSize: "0.85rem",
-                  border: "none",
-                  letterSpacing: "0.3px",
-                }}>
-                  <div className="d-flex align-items-center gap-2">
-                    <FiCreditCard size={16} />
-                    <span>PAN</span>
-                  </div>
-                </th>
-                <th style={{
-                  padding: "16px 8px",
-                  fontWeight: "600",
-                  fontSize: "0.8rem",
-                  border: "none",
-                  letterSpacing: "0.3px",
-                  textAlign: "center",
-                }}>
-                  <div className="d-flex align-items-center justify-content-center gap-1">
-                    <FiCheckCircle size={14} />
-                    <span>STATUS</span>
-                  </div>
-                </th>
-                <th style={{
-                  padding: "16px 8px",
-                  fontWeight: "600",
-                  fontSize: "0.8rem",
-                  border: "none",
-                  letterSpacing: "0.3px",
-                  textAlign: "center",
-                }}>
-                  <div className="d-flex align-items-center justify-content-center gap-1">
-                    <FiCalendar size={14} />
-                    <span>YEAR</span>
-                  </div>
-                </th>
-                <th style={{
-                  padding: "16px 8px",
-                  fontWeight: "600",
-                  fontSize: "0.75rem",
-                  border: "none",
-                  letterSpacing: "0.3px",
-                  textAlign: "center",
-                }}>
-                  <div className="d-flex align-items-center justify-content-center gap-1">
-                    <FiFolder size={14} />
-                    <span>DOCS</span>
-                  </div>
-                </th>
-                <th style={{
-                  padding: "16px 8px",
-                  fontWeight: "600",
-                  fontSize: "0.75rem",
-                  border: "none",
-                  letterSpacing: "0.3px",
-                  textAlign: "center",
-                }}>
-                  <span>ACTIONS</span>
-                </th>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {isLoadingClients ? (
-                <tr>
-                  <td
-                    colSpan="9"
-                    style={{
-                      padding: "60px 20px",
-                      textAlign: "center",
-                      border: "none",
-                    }}
-                  >
-                    <div className="d-flex flex-column align-items-center">
-                      <div
-                        className="spinner-border text-primary mb-3"
-                        role="status"
-                        style={{ width: "2.5rem", height: "2.5rem" }}
+            ) : (
+              pageusers.map((User, index) => (
+                <tr
+                  key={index}
+                  style={{
+                    borderBottom: "1px solid #f1f5f9",
+                    transition: "background-color 0.2s ease"
+                  }}
+                >
+                  <td className="py-2 px-3 text-center" style={{ color: "#64748b", fontWeight: "500" }}>
+                    {startIndex + index + 1}
+                  </td>
+                  <td className="py-2 px-3">
+                    <div className="d-flex align-items-center gap-2">
+                      <div style={{ fontWeight: "600", color: "#334155" }}>{User.name}</div>
+                      {User.isActive === false && (
+                        <Badge bg="secondary" style={{ fontSize: "0.6rem", padding: "2px 6px" }}>Inactive</Badge>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-2 px-3">
+                    <div className="d-flex flex-column gap-1">
+                      <div className="d-flex align-items-center gap-2" style={{ fontSize: "0.8rem", color: "#475569" }}>
+                        <FiPhone size={12} className="text-primary" />
+                        <span>{User.contact}</span>
+                      </div>
+                      {User.email && (
+                        <div className="d-flex align-items-center gap-2" style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                          <FiMail size={12} />
+                          <span className="text-truncate" style={{ maxWidth: "150px" }} title={User.email}>{User.email}</span>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="py-2 px-3">
+                    <span style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      color: "#475569",
+                      padding: "2px 8px",
+                      borderRadius: "4px",
+                      fontSize: "0.75rem",
+                      fontWeight: "600",
+                      fontFamily: "monospace"
+                    }}>
+                      {User.pan}
+                    </span>
+                  </td>
+                  <td className="py-2 px-3 text-center">
+                    <div className={`d-inline-flex align-items-center gap-1 px-2 py-1 rounded-pill ${User.isActive !== false ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`} style={{ fontSize: '0.7rem', fontWeight: '600' }}>
+                      {User.isActive !== false ? <FiCheckCircle size={10} /> : <FiXCircle size={10} />}
+                      <span>{User.isActive !== false ? "Active" : "Inactive"}</span>
+                    </div>
+                  </td>
+                  <td className="py-2 px-3 text-center">
+                    {(() => {
+                      const counts = clientCounts[User.id] || { years: 0, genericDocs: 0, loading: true };
+                      const count = counts.years;
+                      const isLoading = counts.loading;
+
+                      return (
+                        <Button
+                          variant="white"
+                          size="sm"
+                          className="border-0 p-1 position-relative"
+                          onClick={() => navigate("/admin/years", { state: { client: User } })}
+                          disabled={isLoading}
+                          style={{ color: count > 0 ? "#4f46e5" : "#cbd5e1" }}
+                        >
+                          {isLoading ? (
+                            <span className="spinner-border spinner-border-sm" style={{ width: '1rem', height: '1rem' }} />
+                          ) : (
+                            <div className="d-flex align-items-center justify-content-center gap-1">
+                              <FiCalendar size={16} />
+                              <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>{count}</span>
+                            </div>
+                          )}
+                        </Button>
+                      );
+                    })()}
+                  </td>
+                  <td className="py-2 px-3 text-center">
+                    {(() => {
+                      const counts = clientCounts[User.id] || { years: 0, genericDocs: 0, loading: true };
+                      const genericCount = counts.genericDocs;
+                      const isLoading = counts.loading;
+
+                      return (
+                        <Button
+                          variant="white"
+                          size="sm"
+                          className="border-0 p-1"
+                          onClick={() => navigate("/admin/generic-documents", { state: { client: User } })}
+                          disabled={isLoading}
+                          style={{ color: genericCount > 0 ? "#059669" : "#cbd5e1" }}
+                        >
+                          {isLoading ? (
+                            <span className="spinner-border spinner-border-sm" style={{ width: '1rem', height: '1rem' }} />
+                          ) : (
+                            <div className="d-flex align-items-center justify-content-center gap-1">
+                              <FiFolder size={16} />
+                              <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>{genericCount}</span>
+                            </div>
+                          )}
+                        </Button>
+                      );
+                    })()}
+                  </td>
+                  <td className="py-2 px-3 text-center">
+                    <div className="d-flex justify-content-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="light"
+                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                        style={{ width: '28px', height: '28px', color: User.isActive !== false ? '#dc2626' : '#16a34a' }}
+                        onClick={() => handleToggleActive(User)}
+                        title={User.isActive !== false ? "Deactivate" : "Activate"}
                       >
-                        <span className="visually-hidden">Loading...</span>
-                      </div>
-                      <div className="h5 text-muted mb-2">Loading clients...</div>
-                      <div className="text-muted">
-                        Please wait while we fetch client data
-                      </div>
+                        {User.isActive !== false ? <FiXCircle size={14} /> : <FiCheckCircle size={14} />}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="light"
+                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                        style={{ width: '28px', height: '28px', color: '#d97706' }}
+                        onClick={() => handleEdit(User)}
+                        title="Edit"
+                      >
+                        <FiEdit2 size={14} />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="light"
+                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                        style={{ width: '28px', height: '28px', color: '#ef4444' }}
+                        onClick={() => handleDelete(User)}
+                        title="Delete"
+                      >
+                        <FiTrash2 size={14} />
+                      </Button>
                     </div>
                   </td>
                 </tr>
-              ) : (
-                pageusers.map((User, index) => (
-                  <tr
-                    key={index}
-                    style={{
-                      backgroundColor: index % 2 === 0 ? "#f8f9ff" : "white",
-                      transition: "all 0.3s ease",
-                      borderLeft: "4px solid transparent",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = "#e3f2fd";
-                      e.currentTarget.style.borderLeft = "4px solid #2196f3";
-                      e.currentTarget.style.transform = "translateX(2px)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor =
-                        index % 2 === 0 ? "#f8f9ff" : "white";
-                      e.currentTarget.style.borderLeft = "4px solid transparent";
-                      e.currentTarget.style.transform = "translateX(0)";
-                    }}
-                  >
-                    <td
-                      style={{
-                        padding: "16px 8px",
-                        textAlign: "center",
-                        border: "none",
-                        borderBottom: "1px solid #e9ecef",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: "0.9rem",
-                          fontWeight: "600",
-                          color: "#64748b",
-                        }}
-                      >
-                        {startIndex + index + 1}
-                      </span>
-                    </td>
-                    <td
-                      style={{
-                        padding: "16px 12px",
-                        color: "#2c3e50",
-                        border: "none",
-                        borderBottom: "1px solid #e9ecef",
-                      }}
-                    >
-                      <div className="d-flex align-items-center gap-1">
-                        <div
-                          style={{
-                            fontSize: "0.9rem",
-                            fontWeight: "600",
-                            color: "#2c3e50",
-                            lineHeight: "1.6",
-                          }}
-                        >
-                          {User.name}
-                        </div>
-                        {User.isActive === false && (
-                          <Badge bg="secondary" style={{ fontSize: "0.65rem" }}>
-                            Inactive
-                          </Badge>
-                        )}
-                      </div>
-                    </td>
-                    <td
-                      style={{
-                        padding: "16px 24px",
-                        color: "#495057",
-                        border: "none",
-                        borderBottom: "1px solid #e9ecef",
-                        fontSize: "0.85rem",
-                        lineHeight: "1.6",
-                      }}
-                    >
-                      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <FiPhone size={14} style={{ color: "#6366f1" }} />
-                          <span style={{ fontWeight: "600" }}>{User.contact}</span>
-                        </div>
-                        {User.email && (
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <FiMail size={14} style={{ color: "#64748b" }} />
-                            <span style={{ fontSize: "0.8rem", color: "#64748b" }}>{User.email}</span>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td
-                      style={{
-                        padding: "16px 24px",
-                        color: "#495057",
-                        border: "none",
-                        borderBottom: "1px solid #e9ecef",
-                      }}
-                    >
-                      <span
-                        style={{
-                          background: "white",
-                          border: "2px solid #e5e7eb",
-                          color: "#6366f1",
-                          padding: "4px 10px",
-                          borderRadius: "8px",
-                          fontSize: "0.75rem",
-                          fontWeight: "600",
-                          letterSpacing: "0.5px",
-                          display: "inline-block",
-                        }}
-                      >
-                        {User.pan}
-                      </span>
-                    </td>
-                    <td
-                      style={{
-                        padding: "16px 18px",
-                        textAlign: "center",
-                        border: "none",
-                        borderBottom: "1px solid #e9ecef",
-                      }}
-                    >
-                      <Badge
-                        bg={User.isActive !== false ? "success" : "secondary"}
-                        style={{
-                          fontSize: "0.75rem",
-                          padding: "5px 10px",
-                          fontWeight: "600",
-                          borderRadius: "8px",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: "4px",
-                        }}
-                      >
-                        {User.isActive !== false ? (
-                          <>
-                            <FiCheckCircle size={12} />
-                            <span>Active</span>
-                          </>
-                        ) : (
-                          <>
-                            <FiXCircle size={12} />
-                            <span>Inactive</span>
-                          </>
-                        )}
-                      </Badge>
-                    </td>
-                    <td
-                      style={{
-                        padding: "16px 18px",
-                        textAlign: "center",
-                        border: "none",
-                        borderBottom: "1px solid #e9ecef",
-                      }}
-                    >
-                      {(() => {
-                        const counts = clientCounts[User.id] || { years: 0, genericDocs: 0, loading: true };
-                        const count = counts.years;
-                        const isLoading = counts.loading;
+              ))
+            )}
+            {!isLoadingClients && users.length === 0 && (
+              <tr>
+                <td colSpan="8" className="text-center py-5">
+                  <div className="text-muted d-flex flex-column align-items-center">
+                    <FiUsers size={32} className="mb-2 opacity-50" />
+                    <h6 className="mb-1">No clients found</h6>
+                    <small>Add your first client to get started</small>
+                  </div>
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </Table>
 
-                        return (
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              navigate("/admin/years", {
-                                state: { client: User },
-                              });
-                            }}
-                            disabled={isLoading}
-                            style={{
-                              background: "white",
-                              border: "2px solid #e5e7eb",
-                              borderRadius: "10px",
-                              padding: "6px 12px",
-                              color: count > 0 ? "#6366f1" : "#9ca3af",
-                              fontWeight: "600",
-                              fontSize: "0.85rem",
-                              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                              transition: "all 0.3s ease",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "6px",
-                              opacity: isLoading ? 0.7 : 1,
-                            }}
-                            title={`Click to view ${count} years`}
-                            onMouseEnter={(e) => {
-                              if (!isLoading) {
-                                const activeColor = "#6366f1";
-                                e.target.style.background = count > 0 ? activeColor : "#f3f4f6";
-                                e.target.style.borderColor = count > 0 ? activeColor : "#e5e7eb";
-                                e.target.style.color = count > 0 ? "white" : "#9ca3af";
-                                e.target.style.transform = "translateY(-2px)";
-                                e.target.style.boxShadow = "0 4px 12px rgba(99,102,241,0.3)";
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              e.target.style.background = "white";
-                              e.target.style.borderColor = "#e5e7eb";
-                              e.target.style.color = count > 0 ? "#6366f1" : "#9ca3af";
-                              e.target.style.transform = "translateY(0)";
-                              e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
-                            }}
-                          >
-                            {isLoading ? (
-                              <>
-                                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                              </>
-                            ) : (
-                              <>
-                                <FiCalendar size={14} />
-                                <span>{count}</span>
-                              </>
-                            )}
-                          </Button>
-                        );
-                      })()}
-                    </td>
-                    <td
-                      style={{
-                        padding: "16px 18px",
-                        textAlign: "center",
-                        border: "none",
-                        borderBottom: "1px solid #e9ecef",
-                      }}
-                    >
-                      {(() => {
-                        // Get generic documents count from new clientCounts state
-                        const counts = clientCounts[User.id] || { years: 0, genericDocs: 0, loading: true };
-                        const genericCount = counts.genericDocs;
-                        const isLoading = counts.loading;
 
-                        return (
-                          <Button
-                            size="sm"
-                            onClick={() => {
-                              navigate("/admin/generic-documents", {
-                                state: { client: User },
-                              });
-                            }}
-                            disabled={isLoading}
-                            style={{
-                              background: "white",
-                              border: "2px solid #e5e7eb",
-                              borderRadius: "10px",
-                              padding: "6px 12px",
-                              color: genericCount > 0 ? "#10b981" : "#9ca3af",
-                              fontWeight: "600",
-                              fontSize: "0.85rem",
-                              boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                              transition: "all 0.3s ease",
-                              opacity: isLoading ? 0.7 : 1,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: "6px",
-                            }}
-                            title={`Click to manage generic documents (${genericCount} documents)`}
-                            onMouseEnter={(e) => {
-                              if (!isLoading) {
-                                const bgColor = genericCount > 0 ? "#10b981" : "#9ca3af";
-                                e.target.style.background = bgColor;
-                                e.target.style.borderColor = bgColor;
-                                e.target.style.color = "white";
-                                e.target.style.transform = "translateY(-2px)";
-                                e.target.style.boxShadow = genericCount > 0
-                                  ? "0 4px 12px rgba(16,185,129,0.3)"
-                                  : "0 4px 12px rgba(156,163,175,0.3)";
-                              }
-                            }}
-                            onMouseLeave={(e) => {
-                              e.target.style.background = "white";
-                              e.target.style.borderColor = "#e5e7eb";
-                              e.target.style.color = genericCount > 0 ? "#10b981" : "#9ca3af";
-                              e.target.style.transform = "translateY(0)";
-                              e.target.style.boxShadow = "0 1px 3px rgba(0,0,0,0.1)";
-                            }}
-                          >
-                            {isLoading ? (
-                              <>
-                                <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                <span>...</span>
-                              </>
-                            ) : (
-                              <>
-                                <FiFolder size={14} />
-                                <span>{genericCount}</span>
-                              </>
-                            )}
-                          </Button>
-                        );
-                      })()}
-                    </td>
-                    <td
-                      style={{
-                        padding: "16px 18px",
-                        textAlign: "center",
-                        border: "none",
-                        borderBottom: "1px solid #e9ecef",
-                      }}
-                    >
-                      <div className="d-flex gap-2 justify-content-center align-items-center" style={{ flexWrap: 'nowrap' }}>
-                        <Button
-                          size="sm"
-                          onClick={() => handleToggleActive(User)}
-                          style={{
-                            borderRadius: "50%",
-                            width: "48px",
-                            height: "48px",
-                            padding: "0",
-                            border: "none",
-                            background: "#f0f9ff",
-                            color: User.isActive !== false ? "#10b981" : "#94a3b8",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                            transition: "all 0.2s ease",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                          title={User.isActive !== false ? "Mark as inactive" : "Mark as active"}
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = "translateY(-3px)";
-                            e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = "translateY(0)";
-                            e.target.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
-                          }}
-                        >
-                          {User.isActive !== false ? <FiCheckCircle size={24} strokeWidth={2.5} /> : <FiXCircle size={24} strokeWidth={2.5} />}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleEdit(User)}
-                          style={{
-                            borderRadius: "50%",
-                            width: "48px",
-                            height: "48px",
-                            padding: "0",
-                            border: "none",
-                            background: "#fffbeb",
-                            color: "#f59e0b",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                            transition: "all 0.2s ease",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                          title="Edit user"
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = "translateY(-3px)";
-                            e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = "translateY(0)";
-                            e.target.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
-                          }}
-                        >
-                          <FiEdit2 size={24} strokeWidth={2.5} />
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => handleDelete(User)}
-                          style={{
-                            borderRadius: "50%",
-                            width: "48px",
-                            height: "48px",
-                            padding: "0",
-                            border: "none",
-                            background: "#fef2f2",
-                            color: "#ef4444",
-                            boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                            transition: "all 0.2s ease",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                          }}
-                          title="Delete user"
-                          onMouseEnter={(e) => {
-                            e.target.style.transform = "translateY(-3px)";
-                            e.target.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.target.style.transform = "translateY(0)";
-                            e.target.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
-                          }}
-                        >
-                          <FiTrash2 size={24} strokeWidth={2.5} />
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-              {!isLoadingClients && users.length === 0 && (
-                <tr>
-                  <td
-                    colSpan="8"
-                    style={{
-                      padding: "40px 20px",
-                      textAlign: "center",
-                      color: "#6c757d",
-                      fontSize: "1.1rem",
-                      border: "none",
-                    }}
+        {/* 🔹 Pagination Footer */}
+        <div style={{
+          padding: '16px 24px',
+          borderTop: '1px solid #e2e8f0',
+          background: '#f8fafc',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '12px'
+        }}>
+          <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: '500' }}>
+            {totalItems > 0
+              ? `Showing ${startIndex + 1}-${Math.min(endIndex, totalItems)} of ${totalItems} clients`
+              : "No clients found"}
+          </div>
+
+          <Pagination className="mb-0" size="sm" style={{ gap: '4px' }}>
+            <Pagination.First
+              disabled={safeCurrentPage === 1}
+              onClick={() => setCurrentPage(1)}
+              style={{ borderRadius: '6px' }}
+            />
+            <Pagination.Prev
+              disabled={safeCurrentPage === 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              style={{ borderRadius: '6px' }}
+            />
+
+            {Array.from({ length: totalPages })
+              .slice(0, 7)
+              .map((_, i) => {
+                const pageNum = i + 1;
+                return (
+                  <Pagination.Item
+                    key={pageNum}
+                    active={pageNum === safeCurrentPage}
+                    onClick={() => setCurrentPage(pageNum)}
                   >
-                    <div>
-                      <div style={{ fontSize: "3rem", marginBottom: "16px" }}>
-                        👥
-                      </div>
-                      <div style={{ fontWeight: "500", marginBottom: "8px" }}>
-                        No users found
-                      </div>
-                      <div style={{ fontSize: "0.9rem", color: "#adb5bd" }}>
-                        Add your first User to get started
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </Table>
+                    {pageNum}
+                  </Pagination.Item>
+                );
+              })}
+
+            {totalPages > 7 && <Pagination.Ellipsis disabled />}
+
+            {totalPages > 7 && (
+              <Pagination.Item
+                active={safeCurrentPage === totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+              >
+                {totalPages}
+              </Pagination.Item>
+            )}
+
+            <Pagination.Next
+              disabled={safeCurrentPage === totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              style={{ borderRadius: '6px' }}
+            />
+            <Pagination.Last
+              disabled={safeCurrentPage === totalPages}
+              onClick={() => setCurrentPage(totalPages)}
+              style={{ borderRadius: '6px' }}
+            />
+          </Pagination>
         </div>
       </Card>
-
-      {/* 🔹 Pagination */}
-      <div className="d-flex justify-content-between align-items-center">
-        <div className="text-muted small">
-          {totalItems > 0
-            ? `Showing ${startIndex + 1}-${endIndex} of ${totalItems}`
-            : "No records"}
-        </div>
-        <Pagination className="mb-0">
-          <Pagination.First
-            disabled={safeCurrentPage === 1}
-            onClick={() => setCurrentPage(1)}
-          />
-          <Pagination.Prev
-            disabled={safeCurrentPage === 1}
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-          />
-          {Array.from({ length: totalPages })
-            .slice(0, 7)
-            .map((_, i) => {
-              const pageNum = i + 1;
-              return (
-                <Pagination.Item
-                  key={pageNum}
-                  active={pageNum === safeCurrentPage}
-                  onClick={() => setCurrentPage(pageNum)}
-                >
-                  {pageNum}
-                </Pagination.Item>
-              );
-            })}
-          {totalPages > 7 && <Pagination.Ellipsis disabled />}
-          {totalPages > 7 && (
-            <Pagination.Item
-              active={safeCurrentPage === totalPages}
-              onClick={() => setCurrentPage(totalPages)}
-            >
-              {totalPages}
-            </Pagination.Item>
-          )}
-          <Pagination.Next
-            disabled={safeCurrentPage === totalPages}
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-          />
-          <Pagination.Last
-            disabled={safeCurrentPage === totalPages}
-            onClick={() => setCurrentPage(totalPages)}
-          />
-        </Pagination>
-      </div>
 
       {/* 🔹 Documents Modal */}
       <Modal
@@ -1730,696 +1482,492 @@ const UserManagement = ({ goToReports = () => { } }) => {
         }}
         centered
         size="xl"
+        contentClassName="border-0 shadow-lg"
       >
-        <Modal.Header closeButton>
-          <Modal.Title>
-            📁 Documents - {docsUser?.name}{" "}
-            {filterYear && `(Year: ${filterYear})`}
-            <div className="small text-muted mt-1">
-              Contact: {docsUser?.contact} | Email: {docsUser?.email}
-              {filterYear && (
-                <div className="small text-warning mt-1">
-                  🔍 Showing documents for year {filterYear} only. Close modal
-                  to see all users.
+        <Modal.Header closeButton style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', padding: '16px 24px' }}>
+          <div className="w-100 d-flex flex-column gap-3">
+            <div className="d-flex justify-content-between align-items-start">
+              <div>
+                <Modal.Title style={{ fontWeight: '700', color: '#1e293b', fontSize: '1.25rem' }}>
+                  Document Management
+                </Modal.Title>
+                <div className="mt-1 d-flex align-items-center gap-3 text-muted" style={{ fontSize: '0.9rem' }}>
+                  <div className="d-flex align-items-center gap-1">
+                    <FiUser size={14} />
+                    <span className="fw-semibold text-dark">{docsUser?.name}</span>
+                  </div>
+                  <div className="d-flex align-items-center gap-1">
+                    <FiPhone size={14} />
+                    <span>{docsUser?.contact}</span>
+                  </div>
+                  {docsUser?.email && (
+                    <div className="d-flex align-items-center gap-1">
+                      <FiMail size={14} />
+                      <span>{docsUser?.email}</span>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-          </Modal.Title>
-          <div className="d-flex gap-2 mt-2">
-            {filterYear && (
-              <Button
-                variant="warning"
-                size="sm"
-                onClick={() => setFilterYear("")}
-                title="Show all documents for this User"
-              >
-                🔍 Show All Years
-              </Button>
-            )}
-            <Button
-              variant="success"
-              size="sm"
-              onClick={() => {
-                // Show all documents in preview modal for PDF generation
-                const documentData = docsUser?.documents
-                  ? Object.entries(docsUser.documents).map(([id, doc]) => ({
-                    id,
-                    name: doc.name,
-                    year: doc.year,
-                    fileName: doc.fileName,
-                    fileUrl: doc.fileUrl,
-                    fileData: doc.fileData, // Include base64 data for PDF generation
-                    fileSize: doc.fileSize,
-                    fileType: doc.fileType,
-                    uploadedAt: doc.uploadedAt || doc.createdAt,
-                  }))
-                  : [];
 
-                setPreviewDocuments(documentData);
-                setShowPreviewModal(true);
-              }}
-            >
-              📄 Save All as PDF
-            </Button>
-            <Button
-              variant="info"
-              size="sm"
-              onClick={() => {
-                // Show all documents in preview modal
-                const docs = docsUser?.documents
-                  ? Object.entries(docsUser.documents).map(([id, doc]) => ({
-                    id,
-                    name: doc.name,
-                    year: doc.year,
-                    fileName: doc.fileName,
-                    fileUrl: doc.fileUrl,
-                    fileData: doc.fileData, // Include base64 data for download
-                    fileSize: doc.fileSize,
-                    fileType: doc.fileType,
-                    uploadedAt: doc.uploadedAt || doc.createdAt,
-                  }))
-                  : [];
-
-                setPreviewDocuments(docs);
-                setShowPreviewModal(true);
-              }}
-            >
-              👁️ Preview All
-            </Button>
+            <div className="d-flex align-items-center justify-content-between p-2 rounded" style={{ background: 'white', border: '1px solid #e2e8f0' }}>
+              <div className="d-flex align-items-center gap-2">
+                {filterYear ? (
+                  <Badge bg="warning" text="dark" className="d-flex align-items-center gap-2 px-3 py-2">
+                    <span>Filter: {filterYear}</span>
+                    <i className="bi bi-x-circle cursor-pointer" onClick={() => setFilterYear("")} style={{ cursor: 'pointer' }} title="Clear filter"></i>
+                  </Badge>
+                ) : (
+                  <span className="text-muted small ms-2">Showing all years</span>
+                )}
+              </div>
+              <div className="d-flex gap-2">
+                {filterYear && (
+                  <Button
+                    variant="outline-secondary"
+                    size="sm"
+                    onClick={() => setFilterYear("")}
+                    className="d-flex align-items-center gap-2"
+                  >
+                    <FiFilter size={14} /> Clear Filter
+                  </Button>
+                )}
+                <Button
+                  variant="success"
+                  size="sm"
+                  className="d-flex align-items-center gap-2 shadow-sm"
+                  onClick={() => {
+                    const documentData = docsUser?.documents
+                      ? Object.entries(docsUser.documents).map(([id, doc]) => ({
+                        id,
+                        name: doc.name,
+                        year: doc.year,
+                        fileName: doc.fileName,
+                        fileUrl: doc.fileUrl,
+                        fileData: doc.fileData,
+                        fileSize: doc.fileSize,
+                        fileType: doc.fileType,
+                        uploadedAt: doc.uploadedAt || doc.createdAt,
+                      }))
+                      : [];
+                    setPreviewDocuments(documentData);
+                    setShowPreviewModal(true);
+                  }}
+                >
+                  <FiDownload size={14} /> Save All PDF
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="d-flex align-items-center gap-2 shadow-sm"
+                  onClick={() => {
+                    const docs = docsUser?.documents
+                      ? Object.entries(docsUser.documents).map(([id, doc]) => ({
+                        id,
+                        name: doc.name,
+                        year: doc.year,
+                        fileName: doc.fileName,
+                        fileUrl: doc.fileUrl,
+                        fileData: doc.fileData,
+                        fileSize: doc.fileSize,
+                        fileType: doc.fileType,
+                        uploadedAt: doc.uploadedAt || doc.createdAt,
+                      }))
+                      : [];
+                    setPreviewDocuments(docs);
+                    setShowPreviewModal(true);
+                  }}
+                >
+                  <FiEye size={14} /> Preview All
+                </Button>
+              </div>
+            </div>
           </div>
         </Modal.Header>
-        <Modal.Body>
+        <Modal.Body style={{ background: '#f8fafc' }}>
           {/* Add Multiple Documents Form */}
-          <h5 className="mb-3">
-            {editingDocId ? "✏️ Edit Document" : "➕ Add Multiple Documents"}
-          </h5>
+          <div className="d-flex justify-content-between align-items-center mb-4">
+            <h5 className="mb-0 text-dark fw-bold" style={{ fontSize: '1.1rem' }}>
+              {editingDocId ? "✏️ Edit Document" : "➕ Add New Documents"}
+            </h5>
 
-          {/* Document Tabs */}
-          {!editingDocId && docForm.documents.length > 1 && (
-            <div className="mb-3">
+            {!editingDocId && docForm.documents.length > 1 && (
               <div className="d-flex flex-wrap gap-2">
                 {docForm.documents.map((doc, index) => (
                   <Button
                     key={index}
-                    variant={
-                      index === docForm.selectedDocIndex
-                        ? "primary"
-                        : "outline-secondary"
-                    }
+                    variant={index === docForm.selectedDocIndex ? "primary" : "white"}
                     size="sm"
-                    onClick={() =>
-                      setDocForm({ ...docForm, selectedDocIndex: index })
-                    }
+                    onClick={() => setDocForm({ ...docForm, selectedDocIndex: index })}
+                    style={{
+                      border: '1px solid #e2e8f0',
+                      boxShadow: index === docForm.selectedDocIndex ? '0 2px 4px rgba(59, 130, 246, 0.3)' : 'none',
+                      color: index === docForm.selectedDocIndex ? 'white' : '#64748b'
+                    }}
                   >
-                    📄 Document {index + 1}
-                    {doc.docName && ` (${doc.docName})`}
+                    📄 Doc {index + 1}
                   </Button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           <Form>
-            <Row className="g-3">
-              <Col md={6}>
+            <Row className="g-4">
+              <Col md={5}>
                 {/* Current Document Form */}
-                <div className="border rounded p-3 mb-3">
-                  <div className="d-flex justify-content-between align-items-center mb-2">
-                    <h6 className="mb-0">
-                      📝 Document {docForm.selectedDocIndex + 1}
-                      {docForm.documents[docForm.selectedDocIndex]?.docName &&
-                        ` - ${docForm.documents[docForm.selectedDocIndex].docName
-                        }`}
-                    </h6>
-                    {!editingDocId && docForm.documents.length > 1 && (
-                      <Button
-                        variant="outline-danger"
+                <Card className="border-0 shadow-sm mb-3">
+                  <Card.Body className="p-4">
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                      <h6 className="mb-0 fw-bold text-primary">
+                        📝 Document Details
+                      </h6>
+                      {!editingDocId && docForm.documents.length > 1 && (
+                        <Button
+                          variant="light"
+                          size="sm"
+                          className="text-danger"
+                          onClick={() => {
+                            const newDocs = docForm.documents.filter((_, i) => i !== docForm.selectedDocIndex);
+                            const newIndex = Math.max(0, docForm.selectedDocIndex - 1);
+                            setDocForm({ documents: newDocs, selectedDocIndex: newIndex });
+                          }}
+                        >
+                          <FiTrash2 />
+                        </Button>
+                      )}
+                    </div>
+
+                    <Form.Group className="mb-3">
+                      <Form.Label className="small fw-semibold text-secondary">Document Name</Form.Label>
+                      <Form.Control
+                        type="text"
                         size="sm"
-                        onClick={() => {
-                          const newDocs = docForm.documents.filter(
-                            (_, i) => i !== docForm.selectedDocIndex
-                          );
-                          const newIndex = Math.max(
-                            0,
-                            docForm.selectedDocIndex - 1
-                          );
-                          setDocForm({
-                            documents: newDocs,
-                            selectedDocIndex: newIndex,
-                          });
+                        value={docForm?.documents?.[docForm?.selectedDocIndex]?.docName || ""}
+                        onChange={(e) => {
+                          if (!docForm?.documents) return;
+                          const newDocs = [...docForm.documents];
+                          const currentIndex = docForm.selectedDocIndex || 0;
+                          newDocs[currentIndex] = { ...newDocs[currentIndex], docName: e.target.value };
+                          setDocForm({ ...docForm, documents: newDocs });
                         }}
+                        placeholder="e.g., PAN Card, Aadhar Card"
+                        className="bg-light border-0"
+                      />
+                    </Form.Group>
+
+                    <Form.Group className="mb-3">
+                      <Form.Label className="small fw-semibold text-secondary">Year</Form.Label>
+                      <Form.Select
+                        size="sm"
+                        value={docForm?.documents?.[docForm?.selectedDocIndex]?.year || ""}
+                        onChange={(e) => {
+                          if (!docForm?.documents) return;
+                          const newDocs = [...docForm.documents];
+                          const currentIndex = docForm.selectedDocIndex || 0;
+                          newDocs[currentIndex] = { ...newDocs[currentIndex], year: e.target.value };
+                          setDocForm({ ...docForm, documents: newDocs });
+                        }}
+                        className="bg-light border-0"
                       >
-                        🗑️ Remove
-                      </Button>
-                    )}
-                  </div>
+                        <option value="">Select Year</option>
+                        {(() => {
+                          // Logic to generate year options (reused)
+                          const UserYears = docsUser?.documents
+                            ? [...new Set(Object.values(docsUser.documents).map((doc) => doc?.year).filter((year) => year))].sort((a, b) => b - a)
+                            : [];
+                          const currentYear = new Date().getFullYear().toString();
+                          const nextYear = (new Date().getFullYear() + 1).toString();
+                          const allYears = [...new Set([...UserYears, currentYear, nextYear])].sort((a, b) => b - a);
+                          return allYears.map((year) => <option key={year} value={year}>{year}</option>);
+                        })()}
+                      </Form.Select>
+                    </Form.Group>
 
-                  <Form.Group className="mb-3">
-                    <Form.Label>Document Name</Form.Label>
-                    <Form.Control
-                      type="text"
-                      value={
-                        docForm?.documents?.[docForm?.selectedDocIndex]
-                          ?.docName || ""
-                      }
-                      onChange={(e) => {
-                        if (!docForm?.documents) return;
-                        const newDocs = [...docForm.documents];
-                        const currentIndex = docForm.selectedDocIndex || 0;
-                        newDocs[currentIndex] = {
-                          ...newDocs[currentIndex],
-                          docName: e.target.value,
-                        };
-                        setDocForm({ ...docForm, documents: newDocs });
-                      }}
-                      placeholder="e.g., PAN Card, Aadhar Card, Bank Statement"
-                    />
-                  </Form.Group>
-
-                  <Form.Group className="mb-3">
-                    <Form.Label>Year</Form.Label>
-                    <Form.Select
-                      value={
-                        docForm?.documents?.[docForm?.selectedDocIndex]?.year ||
-                        ""
-                      }
-                      onChange={(e) => {
-                        if (!docForm?.documents) return;
-                        const newDocs = [...docForm.documents];
-                        const currentIndex = docForm.selectedDocIndex || 0;
-                        newDocs[currentIndex] = {
-                          ...newDocs[currentIndex],
-                          year: e.target.value,
-                        };
-                        setDocForm({ ...docForm, documents: newDocs });
-                      }}
-                    >
-                      <option value="">Select Year</option>
-                      {(() => {
-                        // Get all unique years from User's documents
-                        const UserYears = docsUser?.documents
-                          ? [
-                            ...new Set(
-                              Object.values(docsUser.documents)
-                                .map((doc) => doc?.year)
-                                .filter((year) => year)
-                            ),
-                          ].sort((a, b) => b - a)
-                          : [];
-
-                        // Add current year and next year if not present
-                        const currentYear = new Date().getFullYear().toString();
-                        const nextYear = (
-                          new Date().getFullYear() + 1
-                        ).toString();
-                        const allYears = [
-                          ...new Set([...UserYears, currentYear, nextYear]),
-                        ].sort((a, b) => b - a);
-
-                        return allYears.map((year) => (
-                          <option key={year} value={year}>
-                            {year}
-                          </option>
-                        ));
-                      })()}
-                    </Form.Select>
-                  </Form.Group>
-
-                  <Form.Group className="mb-3">
-                    <Form.Label>Add Document File</Form.Label>
-                    <Form.Control
-                      type="file"
-                      accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
-                      onChange={(e) => {
-                        if (!docForm?.documents) return;
-                        const file = e.target.files?.[0] || null;
-                        const url = file ? URL.createObjectURL(file) : "";
-                        const newDocs = [...docForm.documents];
-                        const currentIndex = docForm.selectedDocIndex || 0;
-                        newDocs[currentIndex] = {
-                          ...newDocs[currentIndex],
-                          fileName: file?.name || "",
-                          file,
-                          localPreviewUrl: url,
-                        };
-                        setDocForm({ ...docForm, documents: newDocs });
-                      }}
-                    />
-                    {docForm?.documents?.[docForm?.selectedDocIndex]
-                      ?.fileName && (
-                        <div className="small text-muted mt-1">
-                          📎 Selected:{" "}
-                          {docForm.documents[docForm.selectedDocIndex].fileName}
+                    <Form.Group className="mb-3">
+                      <Form.Label className="small fw-semibold text-secondary">Upload File</Form.Label>
+                      <div style={{ position: 'relative' }}>
+                        <Form.Control
+                          type="file"
+                          size="sm"
+                          accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                          onChange={(e) => {
+                            if (!docForm?.documents) return;
+                            const file = e.target.files?.[0] || null;
+                            const url = file ? URL.createObjectURL(file) : "";
+                            const newDocs = [...docForm.documents];
+                            const currentIdx = docForm.selectedDocIndex || 0;
+                            newDocs[currentIdx] = { ...newDocs[currentIdx], fileName: file?.name || "", file, localPreviewUrl: url };
+                            setDocForm({ ...docForm, documents: newDocs });
+                          }}
+                          style={{ fontSize: '0.85rem' }}
+                        />
+                      </div>
+                      {docForm?.documents?.[docForm?.selectedDocIndex]?.fileName && (
+                        <div className="small text-success mt-2 d-flex align-items-center gap-1">
+                          <FiCheckCircle size={12} />
+                          <span>{docForm.documents[docForm.selectedDocIndex].fileName}</span>
                         </div>
                       )}
-                  </Form.Group>
-                </div>
+                    </Form.Group>
+                  </Card.Body>
+                </Card>
 
                 {/* Documents Summary */}
                 {!editingDocId && docForm.documents.length > 1 && (
-                  <div className="border rounded p-2 bg-light">
-                    <div className="small fw-semibold mb-1">
-                      📋 Documents Summary ({docForm.documents.length}):
-                    </div>
-                    {docForm.documents.map((doc, index) => (
-                      <div key={index} className="small text-muted">
-                        {index + 1}. {doc.docName || "Unnamed"}
-                        {doc.year && ` (${doc.year})`}
-                        {doc.fileName && ` - ${doc.fileName}`}
+                  <Card className="border-0 shadow-sm bg-white">
+                    <Card.Body className="p-3">
+                      <div className="small fw-bold text-secondary mb-2">
+                        📋 Summary ({docForm.documents.length} docs)
                       </div>
-                    ))}
-                  </div>
+                      <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                        {docForm.documents.map((doc, index) => (
+                          <div key={index} className="d-flex align-items-center gap-2 py-1 border-bottom border-light small">
+                            <span className="text-muted">{index + 1}.</span>
+                            <span className="fw-medium text-dark">{doc.docName || "Unnamed"}</span>
+                            {doc.year && <Badge bg="light" text="dark" className="border">{doc.year}</Badge>}
+                          </div>
+                        ))}
+                      </div>
+                    </Card.Body>
+                  </Card>
                 )}
               </Col>
 
-              <Col md={6}>
-                <div
-                  className="border rounded p-3"
-                  style={{ background: "#fafafa", minHeight: 450 }}
-                >
-                  <div className="fw-semibold mb-3">
-                    🔍 Preview - Document {docForm.selectedDocIndex + 1}
-                  </div>
-                  {(() => {
-                    const currentDoc =
-                      docForm.documents[docForm.selectedDocIndex];
-                    if (currentDoc?.localPreviewUrl) {
-                      return (
-                        <div>
-                          {/* Preview Controls */}
-                          <div className="d-flex justify-content-between align-items-center mb-3">
-                            <div className="text-muted small">
-                              📎 {currentDoc.fileName} (
-                              {currentDoc.file?.type || "Unknown type"})
-                            </div>
-                            <Button
-                              variant="outline-primary"
-                              size="sm"
-                              onClick={() => {
-                                // Open full preview window
-                                const previewWindow = window.open(
-                                  "",
-                                  "_blank",
-                                  "width=900,height=700"
-                                );
-                                previewWindow.document.write(`
-                                  <!DOCTYPE html>
-                                  <html>
-                                  <head>
-                                    <title>Document Preview - ${currentDoc.docName
-                                  }</title>
-                                    <style>
-                                      body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background-color: #f8f9fa; }
-                                      .header { text-align: center; background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-                                      .preview-container { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-                                      .document-info { background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-                                      .close-btn { position: fixed; top: 20px; right: 20px; background: #007bff; color: white; border: none; padding: 10px 15px; border-radius: 5px; cursor: pointer; z-index: 1000; }
-                                    </style>
-                                  </head>
-                                  <body>
-                                    <button class="close-btn" onclick="window.close()">✕ Close</button>
-                                    <div class="header">
-                                      <h2 style="margin: 0; color: #007bff;">📄 ${currentDoc.docName
-                                  }</h2>
-                                      <p style="margin: 5px 0; color: #6c757d;">Document Preview</p>
-                                    </div>
-                                    <div class="document-info">
-                                      <strong>📎 File:</strong> ${currentDoc.fileName
-                                  } | 
-                                      <strong>📅 Year:</strong> ${currentDoc.year
-                                  } | 
-                                      <strong>📏 Size:</strong> ${currentDoc.file?.size
-                                    ? Math.round(
-                                      currentDoc.file.size / 1024
-                                    ) + " KB"
-                                    : "Unknown"
-                                  }
-                                    </div>
-                                    <div class="preview-container">
-                                      ${currentDoc.file?.type?.includes("pdf")
-                                    ? `<iframe src="${currentDoc.localPreviewUrl}" width="100%" height="600px" style="border: none; border-radius: 5px;"></iframe>`
-                                    : currentDoc.file?.type?.startsWith(
-                                      "image/"
-                                    )
-                                      ? `<img src="${currentDoc.localPreviewUrl}" style="max-width: 100%; height: auto; border-radius: 5px;" alt="Document Preview">`
-                                      : `<div style="text-align: center; padding: 50px; color: #6c757d;">
-                                          <h3>📄 Document Preview</h3>
-                                          <p>File type: ${currentDoc.file?.type || "Unknown"
-                                      }</p>
-                                          <p>This file type cannot be previewed directly in the browser.</p>
-                                          <a href="${currentDoc.localPreviewUrl
-                                      }" download="${currentDoc.fileName
-                                      }" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">📥 Download File</a>
-                                        </div>`
-                                  }
-                                    </div>
-                                  </body>
-                                  </html>
-                                `);
-                                previewWindow.document.close();
-                              }}
-                            >
-                              🔍 Full Preview
-                            </Button>
-                          </div>
-
-                          {/* Inline Preview */}
-                          <div style={{ position: "relative", zIndex: 1 }}>
-                            {currentDoc.file?.type?.startsWith("image/") ? (
-                              <img
-                                src={currentDoc.localPreviewUrl}
-                                alt="preview"
-                                style={{
-                                  width: "100%",
-                                  height: "350px",
-                                  objectFit: "contain",
-                                  borderRadius: "8px",
-                                  border: "1px solid #dee2e6",
-                                  backgroundColor: "white",
-                                }}
-                              />
-                            ) : currentDoc.file?.type === "application/pdf" ? (
-                              <iframe
-                                title="pdf-preview"
-                                src={currentDoc.localPreviewUrl}
-                                style={{
-                                  width: "100%",
-                                  height: "350px",
-                                  border: "1px solid #dee2e6",
-                                  borderRadius: "8px",
-                                  backgroundColor: "white",
-                                }}
-                              />
-                            ) : (
-                              <div
-                                className="text-center p-4"
-                                style={{
-                                  border: "1px solid #dee2e6",
-                                  borderRadius: "8px",
-                                  backgroundColor: "#f8f9fa",
-                                }}
-                              >
-                                <div className="mb-3">
-                                  <i
-                                    className="bi bi-file-earmark"
-                                    style={{
-                                      fontSize: "3rem",
-                                      color: "#007bff",
-                                    }}
-                                  ></i>
-                                </div>
-                                <div className="fw-semibold text-primary">
-                                  {currentDoc.fileName}
-                                </div>
-                                <div className="text-muted small">
-                                  {currentDoc.file?.type || "Unknown type"}
-                                </div>
-                                <div className="text-muted small mt-2">
-                                  File uploaded successfully - Preview available
-                                  in full window
-                                </div>
-                                <Button
-                                  variant="outline-primary"
-                                  size="sm"
-                                  className="mt-3"
-                                  onClick={() => {
-                                    const link = document.createElement("a");
-                                    link.href = currentDoc.localPreviewUrl;
-                                    link.download = currentDoc.fileName;
-                                    document.body.appendChild(link);
-                                    link.click();
-                                    document.body.removeChild(link);
-                                  }}
-                                >
-                                  📥 Download File
-                                </Button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    } else {
-                      return (
-                        <div
-                          className="text-muted text-center p-4"
-                          style={{
-                            border: "2px dashed #dee2e6",
-                            borderRadius: "8px",
+              <Col md={7}>
+                <Card className="border-0 shadow-sm h-100">
+                  <Card.Body className="p-0 d-flex flex-column h-100 bg-white rounded">
+                    <div className="p-3 border-bottom d-flex justify-content-between align-items-center">
+                      <span className="fw-bold text-dark small">Example Preview</span>
+                      {docForm.documents[docForm.selectedDocIndex]?.localPreviewUrl && (
+                        <Button
+                          variant="white"
+                          size="sm"
+                          className="text-primary border-0 fw-bold small d-flex align-items-center gap-1 p-0"
+                          onClick={() => {
+                            // Open full preview logic reuse
+                            const currentDoc = docForm.documents[docForm.selectedDocIndex];
+                            const previewWindow = window.open("", "_blank", "width=900,height=700");
+                            previewWindow.document.write(`<html><body>
+                                  <iframe src="${currentDoc.localPreviewUrl}" width="100%" height="100%"></iframe>
+                               </body></html>`);
+                            previewWindow.document.close();
                           }}
                         >
-                          <div className="mb-3">
-                            <i
-                              className="bi bi-cloud-upload"
-                              style={{ fontSize: "3rem", color: "#6c757d" }}
-                            ></i>
-                          </div>
-                          <div>Select a file to preview</div>
-                          <div className="small mt-2">
-                            Supported: Images, PDFs, Word docs, Excel files
-                          </div>
-                        </div>
-                      );
-                    }
-                  })()}
-                </div>
+                          <FiMaximize2 /> Full Screen
+                        </Button>
+                      )}
+                    </div>
+
+                    <div className="flex-grow-1 p-4 d-flex align-items-center justify-content-center bg-light" style={{ minHeight: '350px' }}>
+                      {(() => {
+                        const currentDoc = docForm.documents[docForm.selectedDocIndex];
+                        if (currentDoc?.localPreviewUrl) {
+                          if (currentDoc.file?.type?.startsWith("image/")) {
+                            return <img src={currentDoc.localPreviewUrl} alt="Preview" style={{ maxWidth: '100%', maxHeight: '350px', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />;
+                          } else if (currentDoc.file?.type === "application/pdf") {
+                            return <iframe src={currentDoc.localPreviewUrl} style={{ width: '100%', height: '350px', border: 'none', borderRadius: '8px' }} />;
+                          } else {
+                            return (
+                              <div className="text-center">
+                                <div className="mb-3 p-3 bg-white rounded-circle shadow-sm d-inline-block">
+                                  <FiFileText size={32} className="text-primary" />
+                                </div>
+                                <h6 className="mb-1 text-dark">{currentDoc.fileName}</h6>
+                                <p className="small text-muted mb-3">Preview not supported for this file type</p>
+                                <div className="small text-primary fw-bold">Ready to upload</div>
+                              </div>
+                            );
+                          }
+                        } else {
+                          return (
+                            <div className="text-center text-muted">
+                              <div className="mb-3 p-4 bg-white rounded-circle shadow-sm d-inline-block">
+                                <FiUploadCloud size={40} className="text-secondary opacity-50" />
+                              </div>
+                              <h6 className="fw-bold text-secondary mb-1">No file selected</h6>
+                              <p className="small mb-0 opacity-75">Upload a document to see preview</p>
+                            </div>
+                          );
+                        }
+                      })()}
+                    </div>
+                  </Card.Body>
+                </Card>
               </Col>
             </Row>
           </Form>
 
+
           {/* Saved Documents Display - Always show section */}
-          <div className="mt-4">
-            <hr className="my-3" />
-            <h5 className="mb-3">
-              📋 Saved Documents {filterYear && `(Year: ${filterYear})`}
+          <div className="mt-5">
+            <h5 className="mb-3 fw-bold text-dark d-flex align-items-center gap-2">
+              📁 Satisfied Documents {filterYear && <Badge bg="warning" text="dark" className="ms-2 small">Year: {filterYear}</Badge>}
             </h5>
-            <div
-              className="border rounded p-3"
-              style={{ maxHeight: "300px", overflowY: "auto" }}
-            >
-              {(() => {
-                if (!docsUser?.documents) {
-                  return (
-                    <div className="text-center text-muted py-3">
-                      <div className="mb-2">📄 No documents saved yet</div>
-                      <small>Documents will appear here after saving</small>
-                    </div>
-                  );
-                }
+            <div className="bg-white rounded border shadow-sm p-0 overflow-hidden">
+              <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+                {(() => {
+                  const filteredDocs = docsUser?.documents
+                    ? Object.entries(docsUser.documents).filter(([_, doc]) => !filterYear || doc.year === filterYear)
+                    : [];
 
-                const filteredDocs = Object.entries(docsUser.documents).filter(
-                  ([id, doc]) =>
-                    doc.fileName !== "placeholder.txt" &&
-                    (doc.docName || doc.name) &&
-                    !(doc.docName || doc.name).includes("Initial Setup") &&
-                    (!filterYear || doc.year === filterYear)
-                );
-
-                console.log("🔍 Filtering documents:", {
-                  totalDocs: Object.keys(docsUser.documents).length,
-                  filteredDocs: filteredDocs.length,
-                  filterYear: filterYear,
-                  allDocs: Object.values(docsUser.documents).map((doc) => ({
-                    name: doc.name || doc.docName,
-                    year: doc.year,
-                  })),
-                });
-
-                if (filteredDocs.length === 0) {
-                  return (
-                    <div className="text-center text-muted py-3">
-                      <div className="mb-2">
-                        📄 No documents found{" "}
-                        {filterYear && `for year ${filterYear}`}
+                  if (filteredDocs.length === 0) {
+                    return (
+                      <div className="text-center text-muted py-5">
+                        <div className="mb-3 p-3 bg-light rounded-circle d-inline-block">
+                          <FiFolder size={32} className="opacity-50" />
+                        </div>
+                        <h6 className="fw-bold text-secondary">No documents found</h6>
+                        <p className="small mb-0 opacity-75">
+                          {filterYear ? `No documents found for year ${filterYear}` : "This client has no documents saved yet"}
+                        </p>
                       </div>
-                      <small>Add documents using the form above</small>
-                    </div>
-                  );
-                }
+                    );
+                  }
 
-                return (
-                  <div className="row g-2">
-                    {filteredDocs.map(([id, doc]) => (
-                      <div key={id} className="col-md-6">
-                        <div className="card card-body py-2 small border-primary">
-                          <div className="d-flex justify-content-between align-items-start">
-                            <div className="flex-grow-1">
-                              <div className="fw-semibold text-primary">
-                                {doc.name || doc.docName}
-                              </div>
-                              {doc.fileName && (
-                                <div className="text-muted small">
-                                  📎 {doc.fileName}
-                                </div>
-                              )}
-                              <div className="text-muted small">
-                                📅 Year: {doc.year}
-                              </div>
-                              {doc.fileData && (
-                                <div className="text-success small">
-                                  ✅ File Available
-                                </div>
+                  return (
+                    <Row className="g-0">
+                      {filteredDocs.map(([key, doc], idx) => (
+                        <Col md={6} xl={4} key={key} className="p-2 border-bottom border-end">
+                          <div className="d-flex align-items-start gap-3 p-2 h-100 rounded hover-bg-light transition-all">
+                            <div className="p-2 rounded bg-light border d-flex align-items-center justify-content-center" style={{ width: '48px', height: '48px' }}>
+                              {doc.fileType === "application/pdf" ? (
+                                <FiFileText className="text-danger" size={24} />
+                              ) : doc.fileType?.startsWith("image/") ? (
+                                <FiImage className="text-primary" size={24} />
+                              ) : (
+                                <FiFile className="text-secondary" size={24} />
                               )}
                             </div>
-                            <div className="d-flex flex-column gap-1">
-                              {doc.fileData && (
+                            <div className="flex-grow-1 min-w-0">
+                              <div className="d-flex justify-content-between align-items-start mb-1">
+                                <div className="fw-bold text-dark text-truncate" title={doc.name || doc.docName} style={{ maxWidth: '120px' }}>
+                                  {doc.name || doc.docName}
+                                </div>
+                                {doc.year && <Badge bg="light" text="dark" className="border text-muted small">{doc.year}</Badge>}
+                              </div>
+
+                              <div className="d-flex align-items-center gap-2 text-muted small mb-2">
+                                <span className="text-truncate" style={{ maxWidth: '100px' }}>{doc.fileName}</span>
+                                <span>•</span>
+                                <span>{doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB` : 'N/A'}</span>
+                              </div>
+
+                              <div className="d-flex align-items-center gap-2">
                                 <Button
-                                  variant="info"
+                                  variant="light"
                                   size="sm"
+                                  className="p-1 rounded-circle border d-flex align-items-center justify-content-center bg-white text-secondary hover-shadow"
+                                  style={{ width: '28px', height: '28px' }}
                                   onClick={() => {
-                                    // Use the same preview modal as "Preview All"
-                                    const singleDocPreview = [
-                                      {
-                                        id: id,
-                                        name: doc.name || doc.docName,
-                                        fileName: doc.fileName,
-                                        year: doc.year,
-                                        fileData: doc.fileData,
-                                        fileUrl:
-                                          doc.fileUrl || doc.downloadURL || "",
-                                        fileSize: doc.fileSize,
-                                        fileType: doc.fileType,
-                                        uploadedAt:
-                                          doc.uploadedAt ||
-                                          new Date().toISOString(),
-                                      },
-                                    ];
-                                    setPreviewDocuments(singleDocPreview);
-                                    setShowPreviewModal(true);
-                                  }}
-                                  title="Preview Document"
-                                  className="px-2"
-                                >
-                                  👁️
-                                </Button>
-                              )}
-                              <Button
-                                variant="warning"
-                                size="sm"
-                                onClick={() => {
-                                  setDocForm({
-                                    documents: [
-                                      {
+                                    setDocForm({
+                                      documents: [{
                                         docName: doc.name || doc.docName || "",
                                         year: doc.year || "",
                                         fileName: doc.fileName || "",
                                         file: null,
-                                        localPreviewUrl: doc.fileData || "",
-                                      },
-                                    ],
-                                    selectedDocIndex: 0,
-                                  });
-                                  setEditingDocId(id);
-                                }}
-                                title="Edit Document"
-                                className="px-2"
-                              >
-                                ✏️
-                              </Button>
-                              <Button
-                                variant="danger"
-                                size="sm"
-                                onClick={async () => {
-                                  if (
-                                    window.confirm(
-                                      `⚠️ Delete "${doc.name || doc.docName
-                                      }"?\n\nThis action cannot be undone.`
-                                    )
-                                  ) {
-                                    try {
-                                      // Use the correct User key instead of array index
-                                      const UserKey =
-                                        docsUser.id ||
-                                        makeNameKey(docsUser.name);
-                                      console.log(
-                                        "🗑️ Deleting document from User key:",
-                                        UserKey
-                                      );
-
-                                      // Remove document directly from Firebase
-                                      await remove(
-                                        ref(
-                                          rtdb,
-                                          `clients/${UserKey}/documents/${id}`
-                                        )
-                                      );
-
-                                      // Update local state by finding and updating the User
-                                      const UserIndex = users.findIndex(
-                                        (c) => c.id === UserKey
-                                      );
-                                      if (UserIndex !== -1) {
-                                        const updatedusers = [...users];
-                                        const User = {
-                                          ...updatedusers[UserIndex],
-                                        };
-
-                                        // Remove document from local User copy
-                                        if (User.documents) {
-                                          delete User.documents[id];
-                                        }
-
-                                        updatedusers[UserIndex] = User;
-                                        setusers(updatedusers);
-                                        setDocsUser(User);
-
-                                        // Update selected User for Year Management modal
-                                        if (
-                                          selectedUser &&
-                                          selectedUser.id === UserKey
-                                        ) {
-                                          setSelectedUser(User);
-                                        }
+                                        localPreviewUrl: doc.fileData || doc.fileUrl || "",
+                                      }],
+                                      selectedDocIndex: 0
+                                    });
+                                    setEditingDocId(key);
+                                  }}
+                                  title="Edit"
+                                >
+                                  <FiEdit2 size={12} />
+                                </Button>
+                                <Button
+                                  variant="light"
+                                  size="sm"
+                                  className="p-1 rounded-circle border d-flex align-items-center justify-content-center bg-white text-primary hover-shadow"
+                                  style={{ width: '28px', height: '28px' }}
+                                  onClick={() => {
+                                    const fileUrl = doc.fileData || doc.fileUrl;
+                                    if (fileUrl) {
+                                      if (doc.fileType === "application/pdf" || doc.fileType?.startsWith("image/")) {
+                                        const win = window.open("", "_blank");
+                                        win.document.write(`
+                                                           <iframe src="${fileUrl}" style="width:100%; height:100%; border:none;"></iframe>
+                                                       `);
+                                      } else {
+                                        const link = document.createElement("a");
+                                        link.href = fileUrl;
+                                        link.download = doc.fileName || "document";
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
                                       }
-
-                                      showSuccessToast(
-                                        `Document "${doc.name || doc.docName
-                                        }" deleted successfully!`
-                                      );
-                                    } catch (error) {
-                                      console.error(
-                                        "❌ Failed to delete document",
-                                        error
-                                      );
-                                      showErrorToast(
-                                        "❌ Failed to delete document. Please try again."
-                                      );
+                                    } else {
+                                      showErrorToast("❌ No preview available");
                                     }
-                                  }
-                                }}
-                                title="Delete Document"
-                                className="px-2"
-                              >
-                                🗑️
-                              </Button>
+                                  }}
+                                  title="View / Download"
+                                >
+                                  <FiDownload size={12} />
+                                </Button>
+                                <Button
+                                  variant="light"
+                                  size="sm"
+                                  className="p-1 rounded-circle border d-flex align-items-center justify-content-center bg-white text-danger hover-shadow"
+                                  style={{ width: '28px', height: '28px' }}
+                                  onClick={async () => {
+                                    if (window.confirm("Are you sure you want to delete this document?")) {
+                                      try {
+                                        const UserKey = docsUser.id || makeNameKey(docsUser.name);
+                                        await remove(ref(rtdb, `clients/${UserKey}/documents/${key}`));
+
+                                        // Refresh logic
+                                        const UserRef = ref(rtdb, `clients/${UserKey}`);
+                                        onValue(UserRef, (snapshot) => {
+                                          if (snapshot.exists()) {
+                                            const updatedUser = snapshot.val();
+                                            // Update users state
+                                            const UserIndex = users.findIndex(c => c.id === UserKey);
+                                            if (UserIndex !== -1) {
+                                              const newUsers = [...users];
+                                              newUsers[UserIndex] = { ...updatedUser, id: UserKey };
+                                              setusers(newUsers);
+                                            }
+                                            // Update current view
+                                            setDocsUser({ ...updatedUser, id: UserKey });
+                                            if (selectedUser?.id === UserKey) setSelectedUser({ ...updatedUser, id: UserKey });
+                                          }
+                                        }, { onlyOnce: true });
+
+                                        showSuccessToast("Document deleted successfully");
+                                      } catch (e) {
+                                        console.error("Delete failed", e);
+                                        showErrorToast("Failed to delete document");
+                                      }
+                                    }
+                                  }}
+                                  title="Delete"
+                                >
+                                  <FiTrash2 size={12} />
+                                </Button>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
+                        </Col>
+                      ))}
+                    </Row>
+                  );
+                })()}
+              </div>
             </div>
           </div>
         </Modal.Body>
 
-        <Modal.Footer>
+        <Modal.Footer style={{ background: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
           <Button
-            variant="secondary"
+            variant="outline-secondary"
+            className="px-4"
             onClick={() => {
               setShowDocs(false);
               setEditingDocId(null);
-              setFilterYear(""); // Clear year filter when closing modal
+              setFilterYear("");
               setDocForm({
-                documents: [
-                  {
-                    docName: "",
-                    year: "",
-                    fileName: "",
-                    file: null,
-                    localPreviewUrl: "",
-                  },
-                ],
+                documents: [{ docName: "", year: "", fileName: "", file: null, localPreviewUrl: "" }],
                 selectedDocIndex: 0,
               });
             }}
@@ -2732,7 +2280,7 @@ const UserManagement = ({ goToReports = () => { } }) => {
               }`}
           </Button>
         </Modal.Footer>
-      </Modal>
+      </Modal >
 
       {/* 🔹 Toast Notifications */}
       <ToastContainer
@@ -4031,7 +3579,7 @@ const UserManagement = ({ goToReports = () => { } }) => {
           </Button>
         </Modal.Footer>
       </Modal>
-    </div>
+    </div >
   );
 };
 

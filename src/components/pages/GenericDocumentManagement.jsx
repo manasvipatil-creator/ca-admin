@@ -350,6 +350,12 @@ const GenericDocumentManagement = () => {
       }
 
       const safeEmail = getSafeEmail(userEmail);
+      if (!safeEmail) {
+        throw new Error("Authentication error: User email not available. Please try logging out and back in.");
+      }
+
+      console.log("🔐 Uploading with Safe Email:", safeEmail);
+
       let successCount = 0;
       let errorCount = 0;
 
@@ -387,13 +393,28 @@ const GenericDocumentManagement = () => {
           // Upload file to Firebase Storage
           const timestamp = Date.now();
           const randomSuffix = Math.floor(Math.random() * 10000);
-          const fileName = `${safeEmail}/clients/${clientContact}/generic/${timestamp}_${randomSuffix}_${fileObj.file.name}`;
-          const fileRef = storageRef(storage, fileName);
 
-          console.log("📤 Uploading file to storage:", fileName);
-          await uploadBytes(fileRef, fileObj.file);
+          // Ensure file name is safe
+          const safeFileName = fileObj.file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+          const storagePath = `${safeEmail}/clients/${clientContact}/generic/${timestamp}_${randomSuffix}_${safeFileName}`;
+          const fileRef = storageRef(storage, storagePath);
+
+          console.log("📤 Uploading file to storage path:", storagePath);
+          console.log("📄 File Type:", fileObj.file.type);
+          console.log("📦 File Size:", fileObj.file.size);
+
+          const metadata = {
+            contentType: fileObj.file.type,
+            customMetadata: {
+              uploadedBy: userEmail,
+              clientContact: clientContact,
+              originalName: fileObj.fileName
+            }
+          };
+
+          await uploadBytes(fileRef, fileObj.file, metadata);
           const fileUrl = await getDownloadURL(fileRef);
-          console.log("✅ File uploaded successfully");
+          console.log("✅ File uploaded successfully. URL:", fileUrl);
 
           const docId = editingDocId || `generic_${timestamp}_${randomSuffix}`;
           const newDoc = {
@@ -401,19 +422,23 @@ const GenericDocumentManagement = () => {
             docName: fileObj.docName,
             fileName: fileObj.fileName,
             fileUrl: fileUrl,
-            storagePath: fileName, // Storage path for Firebase SDK access
+            storagePath: storagePath, // Storage path for Firebase SDK access
             fileType: fileObj.file.type, // MIME type for proper rendering
             fileSize: fileObj.file.size,
             uploadedAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
 
-          // Save to Firebase RTDB
-          const docRef = rtdbRef(rtdb, `${userClientPath}/${clientContact}/years/${selectedYear}/genericDocuments/${docId}`);
-          await set(docRef, newDoc);
-          console.log("✅ Saved to Firebase RTDB");
+          // Save to Firebase RTDB (Best effort - catch errors so they don't block Firestore)
+          try {
+            const docRef = rtdbRef(rtdb, `${userClientPath}/${clientContact}/years/${selectedYear}/genericDocuments/${docId}`);
+            await set(docRef, newDoc);
+            console.log("✅ Saved to Firebase RTDB");
+          } catch (rtdbError) {
+            console.warn("⚠️ Failed to save to RTDB (skipping):", rtdbError.message);
+          }
 
-          // Save to Firestore
+          // Save to Firestore (PrimaryDB)
           const clientDocRef = getClientDocRef(clientContact);
           if (clientDocRef) {
             const genericDocsCollectionRef = collection(clientDocRef, 'genericDocuments');

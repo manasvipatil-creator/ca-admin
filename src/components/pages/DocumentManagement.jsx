@@ -996,12 +996,12 @@ const DocumentManagement = () => {
                             />
                           </Form.Group>
                         </Col>
-                        <Col md={6}>
+                        {/* <Col md={6}>
                           <Form.Group>
                             <Form.Label className="small fw-semibold">Year *</Form.Label>
                             <Form.Control
                               type="number"
-                              placeholder="2024"
+                              placeholder="e.g. 2024,2025"
                               value={fileObj.year}
                               onChange={(e) => handleUpdateYear(fileObj.id, e.target.value)}
                               min="1900"
@@ -1009,7 +1009,7 @@ const DocumentManagement = () => {
                               size="sm"
                             />
                           </Form.Group>
-                        </Col>
+                        </Col> */}
                       </Row>
 
                       {/* Preview section has been removed as requested */}
