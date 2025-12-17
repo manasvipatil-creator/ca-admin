@@ -146,19 +146,19 @@ export const AuthProvider = ({ children }) => {
         setUserEmail(user.email);
         setUserId(user.uid);
         setAuthenticated(true);
-        
+
         // Store in localStorage
         localStorage.setItem("auth", "true");
         localStorage.setItem("userEmail", user.email);
         localStorage.setItem("userId", user.uid);
       } else {
         console.log("🔐 User is signed out");
-        
+
         // Check localStorage for fallback authentication
         const storedAuth = localStorage.getItem("auth");
         const storedEmail = localStorage.getItem("userEmail");
         const storedUserId = localStorage.getItem("userId");
-        
+
         if (storedAuth === "true" && storedEmail) {
           setUserEmail(storedEmail);
           setUserId(storedUserId);

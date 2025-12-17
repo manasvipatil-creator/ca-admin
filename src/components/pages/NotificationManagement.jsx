@@ -429,7 +429,15 @@ const NotificationManagement = () => {
 
         // Check if the function call was successful
         if (result.success === false) {
-          throw new Error(result.message);
+          // Handle specific case of no tokens found
+          if (result.message && result.message.includes("no clients with notification tokens")) {
+            console.warn("⚠️ Push skipped: No tokens found.");
+            setPushStatus("⚠️ Notification saved, but no clients have push notification tokens registered.");
+            showSuccessToast("✅ Notification saved (No devices to push to)");
+            return; // Exit normally, do not throw error
+          } else {
+            throw new Error(result.message);
+          }
         }
 
         setPushStatus(result.message); // Display the success message from the function
@@ -441,10 +449,12 @@ const NotificationManagement = () => {
           console.warn(`⚠️ ${result.failureCount} clients did not receive the notification`);
         }
       } catch (pushError) {
-        console.error("❌ Error sending push notification:", pushError);
-        console.error("❌ Error code:", pushError.code);
-        console.error("❌ Error details:", pushError.details);
+        console.error("❌ Error sending push notification:", pushError.message || pushError);
+        if (pushError.code) console.error("❌ Error code:", pushError.code);
+        if (pushError.details) console.error("❌ Error details:", pushError.details);
+
         setPushStatus(`Push notification failed: ${pushError.message}`);
+        // Do not block the UI cleanup since the notification itself was saved in Firestore earlier
       }
 
       // Reset form
