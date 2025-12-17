@@ -7,10 +7,10 @@
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log",
-     "lint": "eslint src --ext .js,.jsx"
+    "lint": "eslint src --ext .js,.jsx"
   },
   "engines": {
-    "node": "22"
+    "node": "20"
   },
   "main": "index.js",
   "dependencies": {

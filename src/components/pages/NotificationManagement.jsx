@@ -398,7 +398,9 @@ const NotificationManagement = () => {
         // Use the currentUser already defined above (no need to redeclare)
 
         // Make HTTP request to the Cloud Function
-        const functionUrl = 'https://us-central1-shreyshshah.cloudfunctions.net/sendAdminBroadcast';
+        // Dynamically get project ID from auth app options
+        const projectId = auth.app.options.projectId;
+        const functionUrl = `https://us-central1-cadirect-fea91.cloudfunctions.net/sendAdminBroadcast`;
 
         const response = await fetch(functionUrl, {
           method: 'POST',
@@ -418,7 +420,8 @@ const NotificationManagement = () => {
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+          console.error("❌ HTTP Error RAW Response:", errorData);
+          throw new Error(errorData.message || (errorData.error && errorData.error.message) || `HTTP error! status: ${response.status}`);
         }
 
         const result = await response.json();
