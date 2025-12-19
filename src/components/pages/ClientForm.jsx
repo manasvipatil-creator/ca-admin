@@ -2,9 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Card, Form, Button, Row, Col, Alert, Toast, ToastContainer } from 'react-bootstrap';
-import { FiLoader, FiUserPlus, FiEdit } from 'react-icons/fi';
-import { doc } from 'firebase/firestore';
+import { Card, Form, Button, Row, Col, Alert, Toast, ToastContainer, Modal } from 'react-bootstrap';
+import { FiLoader, FiUserPlus, FiEdit, FiXCircle, FiAlertTriangle } from 'react-icons/fi';
+import { doc, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { clientHelpers } from '../../utils/firestoreHelpers';
@@ -23,6 +23,10 @@ const ClientForm = () => {
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [toastVariant, setToastVariant] = useState("success");
+
+  // Custom Error Modal State
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [errorModalMessage, setErrorModalMessage] = useState("");
 
   // Toast notification helper functions
   const showSuccessToast = (message) => {
@@ -180,6 +184,42 @@ const ClientForm = () => {
       setError("Unable to determine user path. Please try logging in again.");
       setLoading(false);
       return;
+    }
+
+    // Check for existing client with same contact
+    try {
+      if (formData.contact) {
+        const q = query(clientsRef, where("contact", "==", formData.contact));
+        const querySnapshot = await getDocs(q);
+
+        if (!querySnapshot.empty) {
+          // Check all matching docs (in case multiple, though shouldn't happen)
+          let isDuplicate = false;
+          querySnapshot.forEach((doc) => {
+            // If adding new (editIndex is null), any match is a duplicate
+            if (editIndex === null || editIndex === undefined) {
+              isDuplicate = true;
+            }
+            // If editing, it's a duplicate if the ID doesn't match current editIndex
+            else if (doc.id !== editIndex) {
+              isDuplicate = true;
+            }
+          });
+
+          if (isDuplicate) {
+            const errorMsg = "Client already exists.";
+            // ERROR MODAL LOGIC
+            setErrorModalMessage(errorMsg);
+            setShowErrorModal(true);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+    } catch (checkError) {
+      console.error("Error checking duplicates:", checkError);
+      // Optional: Fail safe or warn? 
+      // We will proceed but log the error, or user can retry.
     }
 
     try {
@@ -432,6 +472,36 @@ const ClientForm = () => {
           </Toast.Body>
         </Toast>
       </ToastContainer>
+
+      {/* Custom Warning Modal (Centered & Styled) */}
+      <Modal
+        show={showErrorModal}
+        onHide={() => setShowErrorModal(false)}
+        centered
+        contentClassName="border-0 shadow-lg"
+        size="sm"
+      >
+        <Modal.Body className="p-0" style={{ borderRadius: '12px', overflow: 'hidden', backgroundColor: '#FFFBEB' }}>
+          <div className="d-flex justify-content-between align-items-center pt-3 px-3 pb-2">
+            <div className="d-flex align-items-center gap-2">
+              <FiAlertTriangle size={20} className="text-warning" style={{ strokeWidth: '2.5', color: '#D97706' }} />
+              <h5 className="mb-0 fw-bold" style={{ fontSize: '1.05rem', color: '#B45309' }}>
+                Warning
+              </h5>
+            </div>
+            <button
+              type="button"
+              className="btn-close"
+              onClick={() => setShowErrorModal(false)}
+              aria-label="Close"
+              style={{ fontSize: '0.8rem' }}
+            ></button>
+          </div>
+          <div className="mx-3 mb-3 p-3 text-white rounded" style={{ backgroundColor: '#F59E0B', fontWeight: '500', fontSize: '0.95rem', boxShadow: '0 2px 4px rgba(245, 158, 11, 0.2)' }}>
+            {errorModalMessage}
+          </div>
+        </Modal.Body>
+      </Modal>
     </>
   );
 };
