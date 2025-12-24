@@ -13,7 +13,8 @@ const Login = ({ onSuccess }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [emailError, setEmailError] = useState(null);
+  const [passwordError, setPasswordError] = useState(null);
 
   const verifyAdmin = (data, emailIn, passwordIn) => {
     if (!data) return false;
@@ -37,7 +38,8 @@ const Login = ({ onSuccess }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
+    setEmailError(null);
+    setPasswordError(null);
 
     const cleanEmail = email.trim();
     let verified = false;
@@ -95,27 +97,41 @@ const Login = ({ onSuccess }) => {
       console.log("❌ Firebase Authentication failed:", authError.code || authError.message);
 
       // DETERMINE SPECIFIC ERROR MESSAGE
-      let authErrorMessage = "Invalid email or password.";
-      let isAuthUserFound = true; // Assume found unless proven otherwise
+      let isAuthUserFound = false; // Default to not found
 
+      // For invalid-credential, we need to check if the email exists first
       if (authError.code === 'auth/wrong-password' || authError.code === 'auth/invalid-credential') {
-        authErrorMessage = "Incorrect password.";
+        // Check if email exists in Firestore to give accurate error
+        try {
+          const sanitizedEmail = cleanEmail.replace(/\./g, '_');
+          const docRef = doc(db, "ca_admin", sanitizedEmail);
+          const docSnap = await getDoc(docRef);
+
+          if (docSnap.exists()) {
+            // Email exists, so it's a password error
+            isAuthUserFound = true;
+            setPasswordError("Incorrect password.");
+          } else {
+            // Email doesn't exist in Firestore
+            setEmailError("No account found with this email.");
+          }
+        } catch (checkError) {
+          // If check fails, default to password error
+          setPasswordError("Incorrect password.");
+        }
       } else if (authError.code === 'auth/user-not-found') {
-        authErrorMessage = "No account found with this email.";
-        isAuthUserFound = false;
+        setEmailError("No account found with this email.");
       } else if (authError.code === 'auth/invalid-email') {
-        authErrorMessage = "Invalid email format.";
-        isAuthUserFound = false;
+        setEmailError("Invalid email format.");
       } else if (authError.code === 'auth/unauthorized-admin') {
         // Special case where auth worked but DB check failed
-        authErrorMessage = "No account found with this email.";
-        isAuthUserFound = false;
+        setEmailError("No account found with this email.");
       }
 
       // 2. Fallback: Check Firestore manually (if Auth failed)
       // This covers the case where the user might rely on Firestore 'credentials' field logic 
       // instead of Firebase Auth (though ideally they should match)
-      if (!verified) {
+      if (!verified && !emailError && !passwordError) {
         try {
           console.log("🔄 Trying Firestore 'ca_admin' manual verification...");
           const sanitizedEmail = cleanEmail.replace(/\./g, '_');
@@ -134,13 +150,14 @@ const Login = ({ onSuccess }) => {
               if (typeof onSuccess === "function") onSuccess();
               verified = true;
               return; // success
-            } else if (docSnap.exists()) {
+            } else {
               // User exists but password wrong
-              // If we are here, it means Auth failed AND Firestore password check failed
-              // So we can confidently say "Incorrect password" if we found the user
               isAuthUserFound = true;
-              authErrorMessage = "Incorrect password.";
+              setPasswordError("Incorrect password.");
             }
+          } else {
+            // User doesn't exist
+            setEmailError("No account found with this email.");
           }
         } catch (firestoreError) {
           console.error("❌ Firestore check failed:", firestoreError);
@@ -170,10 +187,12 @@ const Login = ({ onSuccess }) => {
 
       // FINAL ERROR DISPLAY
       // If we are here, strict auth failed, manually firestore failed, and RTDB failed.
-      if (!isAuthUserFound) {
-        setError("No account found with this email.");
-      } else {
-        setError(authErrorMessage);
+      if (!verified && !emailError && !passwordError) {
+        if (!isAuthUserFound) {
+          setEmailError("No account found with this email.");
+        } else {
+          setPasswordError("Incorrect password.");
+        }
       }
     } finally {
       setLoading(false);
@@ -198,13 +217,6 @@ const Login = ({ onSuccess }) => {
         </div>
 
         <div className="login-body">
-          {error && (
-            <Alert variant="danger" className="d-flex align-items-center mb-4" style={{ borderRadius: '10px', fontSize: '0.9rem' }}>
-              <FiAlertCircle size={20} className="me-2 flex-shrink-0" />
-              <span>{error}</span>
-            </Alert>
-          )}
-
           <Form onSubmit={handleSubmit}>
             <Form.Group className="mb-3">
               <Form.Label className="text-muted small fw-bold text-uppercase">Email Address</Form.Label>
@@ -212,13 +224,19 @@ const Login = ({ onSuccess }) => {
                 <FiMail className="input-icon" size={18} />
                 <Form.Control
                   type="email"
-                  className="custom-input"
+                  className={`custom-input ${emailError ? 'is-invalid' : ''}`}
                   placeholder="name@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                 />
               </div>
+              {emailError && (
+                <div className="d-flex align-items-center mt-2" style={{ color: '#dc3545', fontSize: '0.875rem' }}>
+                  <FiAlertCircle size={16} className="me-2 flex-shrink-0" />
+                  <span>{emailError}</span>
+                </div>
+              )}
             </Form.Group>
 
             <Form.Group className="mb-4">
@@ -227,13 +245,19 @@ const Login = ({ onSuccess }) => {
                 <FiLock className="input-icon" size={18} />
                 <Form.Control
                   type="password"
-                  className="custom-input"
+                  className={`custom-input ${passwordError ? 'is-invalid' : ''}`}
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
                 />
               </div>
+              {passwordError && (
+                <div className="d-flex align-items-center mt-2" style={{ color: '#dc3545', fontSize: '0.875rem' }}>
+                  <FiAlertCircle size={16} className="me-2 flex-shrink-0" />
+                  <span>{passwordError}</span>
+                </div>
+              )}
             </Form.Group>
 
             <Button type="submit" className="login-btn" disabled={loading}>

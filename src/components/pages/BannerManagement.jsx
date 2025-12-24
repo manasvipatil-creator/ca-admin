@@ -5,15 +5,16 @@ import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject, getStorag
 import { doc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import { bannerHelpers, firestoreHelpers } from '../../utils/firestoreHelpers';
-import { 
-  FiImage, 
-  FiCheckCircle, 
-  FiPauseCircle, 
-  FiPlus, 
-  FiEye, 
-  FiEdit, 
+import {
+  FiImage,
+  FiCheckCircle,
+  FiPauseCircle,
+  FiPlus,
+  FiEye,
+  FiEdit,
   FiTrash2,
-  FiUpload
+  FiUpload,
+  FiX
 } from 'react-icons/fi';
 
 const BannerManagement = () => {
@@ -31,7 +32,7 @@ const BannerManagement = () => {
   const [bannerSuccessMessage, setBannerSuccessMessage] = useState("");
   const [showViewModal, setShowViewModal] = useState(false);
   const [viewingBanner, setViewingBanner] = useState(null);
-  
+
   // Ref to track if component is mounted
   const mountedRef = React.useRef(true);
   // Unique identifier for this component instance
@@ -74,7 +75,7 @@ const BannerManagement = () => {
 
     console.log("🔗 Setting up Firestore listener for banners (Component ID:", componentId.current, ")");
     console.log("📍 Banners collection path:", bannersRef.path);
-    
+
     // Use direct firestoreHelpers.subscribe instead of bannerHelpers.subscribeToBanners
     // to avoid the enhanced callback wrapper that might be causing issues
     console.log("🔗 Setting up direct Firestore subscription...");
@@ -82,7 +83,7 @@ const BannerManagement = () => {
       bannersRef,
       (bannersList) => {
         console.log("🔧 mountedRef.current:", mountedRef.current);
-        
+
         // Temporarily remove mounted check to debug the issue
         console.log("🎯 INITIAL LISTENER TRIGGERED! Banner data received:", bannersList);
         console.log("📊 Banner data length:", bannersList.length);
@@ -91,7 +92,7 @@ const BannerManagement = () => {
         console.log("🔄 Setting initialLoading to false...");
         setInitialLoading(false);
         console.log("✅ Initial state updated with", bannersList.length, "banners");
-        
+
         // Force a re-render check
         setTimeout(() => {
           console.log("🔍 State check after timeout - banners:", bannersList.length, "initialLoading should be false");
@@ -162,7 +163,7 @@ const BannerManagement = () => {
     if (bannerForm.imagePreview && bannerForm.imagePreview.startsWith('blob:')) {
       URL.revokeObjectURL(bannerForm.imagePreview);
     }
-    
+
     setBannerForm({
       bannerName: "",
       bannerImage: null,
@@ -175,14 +176,14 @@ const BannerManagement = () => {
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     console.log("🎨 Banner form submission started");
     console.log("📋 Form data:", {
       bannerName: bannerForm.bannerName,
       hasImage: !!bannerForm.bannerImage,
       isEditing: !!editingBanner
     });
-    
+
     if (!bannerForm.bannerName.trim()) {
       showAlert("Please enter banner name", "danger");
       return;
@@ -214,20 +215,20 @@ const BannerManagement = () => {
       // Upload image if new image is selected
       if (bannerForm.bannerImage) {
         console.log("📁 Uploading image to Firebase Storage...");
-        
+
         try {
           const storage = getStorage();
           const fileName = `${Date.now()}_${bannerForm.bannerImage.name}`;
           imagePath = `banners/${userEmail}/${fileName}`;
           const imageRef = storageRef(storage, imagePath);
-          
+
           console.log("📤 Uploading to path:", imagePath);
           const snapshot = await uploadBytes(imageRef, bannerForm.bannerImage);
           console.log("✅ Upload successful, getting download URL...");
-          
+
           imageUrl = await getDownloadURL(snapshot.ref);
           console.log("🔗 Download URL obtained:", imageUrl);
-          
+
         } catch (uploadError) {
           console.error("❌ Image upload failed:", uploadError);
           showAlert(`Image upload failed: ${uploadError.message}`, "danger");
@@ -374,7 +375,7 @@ const BannerManagement = () => {
         <Col>
           <div className="d-flex justify-content-between align-items-center">
             <div>
-              <h2 className="mb-1" style={{ 
+              <h2 className="mb-1" style={{
                 color: '#1e293b',
                 fontWeight: '700',
                 fontSize: '1.75rem'
@@ -418,7 +419,7 @@ const BannerManagement = () => {
             >
               {showForm ? (
                 <>
-                  <FiTrash2 size={16} />
+                  <FiX size={16} color="#ef4444" />
                   <span>Cancel</span>
                 </>
               ) : (
@@ -467,9 +468,9 @@ const BannerManagement = () => {
                 </Col>
                 <Col md={4}>
                   <div className="text-center">
-                    <div style={{ 
-                      background: '#f8f9fa', 
-                      borderRadius: '12px', 
+                    <div style={{
+                      background: '#f8f9fa',
+                      borderRadius: '12px',
                       padding: '20px',
                       border: '1px solid #e5e7eb'
                     }}>
@@ -577,13 +578,7 @@ const BannerManagement = () => {
                     >
                       {loading ? '⏳ Saving...' : (editingBanner ? '💾 Update Banner' : '➕ Add Banner')}
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline-secondary"
-                      onClick={resetForm}
-                    >
-                      🔄 Reset
-                    </Button>
+
                   </div>
                 </Form>
               </Card.Body>
@@ -686,12 +681,12 @@ const BannerManagement = () => {
                         backgroundColor: 'white',
                         transition: 'all 0.2s ease'
                       }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = '#f8f9fa';
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.backgroundColor = 'white';
-                      }}>
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#f8f9fa';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'white';
+                        }}>
                         <td style={{
                           padding: '16px 24px',
                           border: 'none',
@@ -786,10 +781,10 @@ const BannerManagement = () => {
                           borderBottom: '1px solid #e5e7eb'
                         }}>
                           <small style={{ color: '#64748b', fontSize: '0.85rem' }}>
-                            {banner.createdAt ? 
-                              new Date(banner.createdAt).toLocaleDateString('en-IN') : 
-                              banner.createdAt && banner.createdAt.toDate ? 
-                                banner.createdAt.toDate().toLocaleDateString('en-IN') : 
+                            {banner.createdAt ?
+                              new Date(banner.createdAt).toLocaleDateString('en-IN') :
+                              banner.createdAt && banner.createdAt.toDate ?
+                                banner.createdAt.toDate().toLocaleDateString('en-IN') :
                                 'N/A'
                             }
                           </small>
@@ -914,15 +909,15 @@ const BannerManagement = () => {
                         <strong>📝 Banner Name:</strong>
                         <div className="mt-1">{viewingBanner.bannerName}</div>
                       </div>
-                      
+
 
                       <div className="mb-3">
                         <strong>📅 Created:</strong>
                         <div className="mt-1">
-                          {viewingBanner.createdAt ? 
-                            new Date(viewingBanner.createdAt).toLocaleString('en-IN') : 
-                            viewingBanner.createdAt && viewingBanner.createdAt.toDate ? 
-                              viewingBanner.createdAt.toDate().toLocaleString('en-IN') : 
+                          {viewingBanner.createdAt ?
+                            new Date(viewingBanner.createdAt).toLocaleString('en-IN') :
+                            viewingBanner.createdAt && viewingBanner.createdAt.toDate ?
+                              viewingBanner.createdAt.toDate().toLocaleString('en-IN') :
                               'N/A'
                           }
                         </div>
@@ -983,7 +978,7 @@ const BannerManagement = () => {
                   </Card>
                 </div>
               </Col>
-              
+
               <Col md={6}>
                 <div className="mb-3">
                   <h6 className="text-muted mb-2">Banner Preview</h6>
@@ -1032,8 +1027,8 @@ const BannerManagement = () => {
           </Button>
           {viewingBanner && (
             <>
-              <Button 
-                variant="warning" 
+              <Button
+                variant="warning"
                 onClick={() => {
                   setShowViewModal(false);
                   handleEdit(viewingBanner);

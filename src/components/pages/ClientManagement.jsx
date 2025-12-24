@@ -1024,10 +1024,13 @@ const UserManagement = ({ goToReports = () => { } }) => {
   return (
     <div style={{
       padding: '16px 24px',
-      background: '#f1f5f9', // Slate-100
-      minHeight: '100vh',
+      background: '#f1f5f9',
+      height: 'calc(100vh - 150px)',
       width: '100%',
-      fontFamily: "'Inter', sans-serif"
+      fontFamily: "'Inter', sans-serif",
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden'
     }}>
       {loadingProgress > 0 && (
         <div style={{
@@ -1212,195 +1215,210 @@ const UserManagement = ({ goToReports = () => { } }) => {
         </div>
       </div>
 
-      {/* 🔹 Dense Professional Table */}
-      <Card className="border-0 shadow-sm" style={{ borderRadius: '8px', overflow: 'hidden' }}>
-        <Table hover responsive className="align-middle mb-0" style={{ fontSize: '0.85rem' }}>
-          <thead style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
-            <tr>
-              <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '4%' }}>Sr No.</th>
-              <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '20%' }}>Client Name</th>
-              <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '15%' }}>Contact Info</th>
-              <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>PAN</th>
-              <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Status</th>
-              <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Years</th>
-              <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Docs</th>
-              <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '15%' }}>Actions</th>
-            </tr>
-          </thead >
-          <tbody>
-            {isLoadingClients ? (
+      {/* 🔹 Scrollable Table Container */}
+      <Card className="border-0 shadow-sm" style={{
+        flex: 1,
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        borderRadius: '8px'
+      }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          <Table hover responsive className="align-middle mb-0" style={{ fontSize: '0.85rem' }}>
+            <thead style={{
+              background: '#f8fafc',
+              borderBottom: '2px solid #e2e8f0',
+              position: 'sticky',
+              top: 0,
+              zIndex: 10,
+              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+            }}>
               <tr>
-                <td
-                  colSpan="8"
-                  className="text-center py-5"
-                  style={{ color: "#64748b" }}
-                >
-                  <div className="d-flex flex-column align-items-center">
-                    <div className="spinner-border text-primary mb-2" role="status" style={{ width: "2rem", height: "2rem" }}>
-                      <span className="visually-hidden">Loading...</span>
-                    </div>
-                    <div className="small">Loading clients...</div>
-                  </div>
-                </td>
+                <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '4%' }}>Sr No.</th>
+                <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '20%' }}>Client Name</th>
+                <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '15%' }}>Contact Info</th>
+                <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>PAN</th>
+                <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Status</th>
+                <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Years</th>
+                <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Docs</th>
+                <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '15%' }}>Actions</th>
               </tr>
-            ) : (
-              pageusers.map((User, index) => (
-                <tr
-                  key={index}
-                  style={{
-                    borderBottom: "1px solid #f1f5f9",
-                    transition: "background-color 0.2s ease"
-                  }}
-                >
-                  <td className="py-2 px-3 text-center" style={{ color: "#64748b", fontWeight: "500" }}>
-                    {startIndex + index + 1}
-                  </td>
-                  <td className="py-2 px-3">
-                    <div className="d-flex align-items-center gap-2">
-                      <div style={{ fontWeight: "600", color: "#334155" }}>{User.name}</div>
-                      {User.isActive === false && (
-                        <Badge bg="secondary" style={{ fontSize: "0.6rem", padding: "2px 6px" }}>Inactive</Badge>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-2 px-3">
-                    <div className="d-flex flex-column gap-1">
-                      <div className="d-flex align-items-center gap-2" style={{ fontSize: "0.8rem", color: "#475569" }}>
-                        <FiPhone size={12} className="text-primary" />
-                        <span>{User.contact}</span>
+            </thead >
+            <tbody>
+              {isLoadingClients ? (
+                <tr>
+                  <td
+                    colSpan="8"
+                    className="text-center py-5"
+                    style={{ color: "#64748b" }}
+                  >
+                    <div className="d-flex flex-column align-items-center">
+                      <div className="spinner-border text-primary mb-2" role="status" style={{ width: "2rem", height: "2rem" }}>
+                        <span className="visually-hidden">Loading...</span>
                       </div>
-                      {User.email && (
-                        <div className="d-flex align-items-center gap-2" style={{ fontSize: "0.8rem", color: "#64748b" }}>
-                          <FiMail size={12} />
-                          <span className="text-truncate" style={{ maxWidth: "150px" }} title={User.email}>{User.email}</span>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-2 px-3">
-                    <span style={{
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                      color: "#475569",
-                      padding: "2px 8px",
-                      borderRadius: "4px",
-                      fontSize: "0.75rem",
-                      fontWeight: "600",
-                      fontFamily: "monospace"
-                    }}>
-                      {User.pan}
-                    </span>
-                  </td>
-                  <td className="py-2 px-3 text-center">
-                    <div className={`d-inline-flex align-items-center gap-1 px-2 py-1 rounded-pill ${User.isActive !== false ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`} style={{ fontSize: '0.7rem', fontWeight: '600' }}>
-                      {User.isActive !== false ? <FiCheckCircle size={10} /> : <FiXCircle size={10} />}
-                      <span>{User.isActive !== false ? "Active" : "Inactive"}</span>
-                    </div>
-                  </td>
-                  <td className="py-2 px-3 text-center">
-                    {(() => {
-                      const counts = clientCounts[User.id] || { years: 0, genericDocs: 0, loading: true };
-                      const count = counts.years;
-                      const isLoading = counts.loading;
-
-                      return (
-                        <Button
-                          variant="white"
-                          size="sm"
-                          className="border-0 p-1 position-relative"
-                          onClick={() => navigate("/admin/years", { state: { client: User } })}
-                          disabled={isLoading}
-                          style={{ color: count > 0 ? "#4f46e5" : "#cbd5e1" }}
-                        >
-                          {isLoading ? (
-                            <span className="spinner-border spinner-border-sm" style={{ width: '1rem', height: '1rem' }} />
-                          ) : (
-                            <div className="d-flex align-items-center justify-content-center gap-1">
-                              <FiCalendar size={16} />
-                              <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>{count}</span>
-                            </div>
-                          )}
-                        </Button>
-                      );
-                    })()}
-                  </td>
-                  <td className="py-2 px-3 text-center">
-                    {(() => {
-                      const counts = clientCounts[User.id] || { years: 0, genericDocs: 0, loading: true };
-                      const genericCount = counts.genericDocs;
-                      const isLoading = counts.loading;
-
-                      return (
-                        <Button
-                          variant="white"
-                          size="sm"
-                          className="border-0 p-1"
-                          onClick={() => navigate("/admin/generic-documents", { state: { client: User } })}
-                          disabled={isLoading}
-                          style={{ color: genericCount > 0 ? "#059669" : "#cbd5e1" }}
-                        >
-                          {isLoading ? (
-                            <span className="spinner-border spinner-border-sm" style={{ width: '1rem', height: '1rem' }} />
-                          ) : (
-                            <div className="d-flex align-items-center justify-content-center gap-1">
-                              <FiFolder size={16} />
-                              <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>{genericCount}</span>
-                            </div>
-                          )}
-                        </Button>
-                      );
-                    })()}
-                  </td>
-                  <td className="py-2 px-3 text-center">
-                    <div className="d-flex justify-content-center gap-2">
-                      <Button
-                        size="sm"
-                        variant="light"
-                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
-                        style={{ width: '28px', height: '28px', color: User.isActive !== false ? '#dc2626' : '#16a34a' }}
-                        onClick={() => handleToggleActive(User)}
-                        title={User.isActive !== false ? "Deactivate" : "Activate"}
-                      >
-                        {User.isActive !== false ? <FiXCircle size={14} /> : <FiCheckCircle size={14} />}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="light"
-                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
-                        style={{ width: '28px', height: '28px', color: '#d97706' }}
-                        onClick={() => handleEdit(User)}
-                        title="Edit"
-                      >
-                        <FiEdit2 size={14} />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="light"
-                        className="p-1 rounded-circle d-flex align-items-center justify-content-center"
-                        style={{ width: '28px', height: '28px', color: '#ef4444' }}
-                        onClick={() => handleDelete(User)}
-                        title="Delete"
-                      >
-                        <FiTrash2 size={14} />
-                      </Button>
+                      <div className="small">Loading clients...</div>
                     </div>
                   </td>
                 </tr>
-              ))
-            )}
-            {!isLoadingClients && users.length === 0 && (
-              <tr>
-                <td colSpan="8" className="text-center py-5">
-                  <div className="text-muted d-flex flex-column align-items-center">
-                    <FiUsers size={32} className="mb-2 opacity-50" />
-                    <h6 className="mb-1">No clients found</h6>
-                    <small>Add your first client to get started</small>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </Table>
+              ) : (
+                pageusers.map((User, index) => (
+                  <tr
+                    key={index}
+                    style={{
+                      borderBottom: "1px solid #f1f5f9",
+                      transition: "background-color 0.2s ease"
+                    }}
+                  >
+                    <td className="py-2 px-3 text-center" style={{ color: "#64748b", fontWeight: "500" }}>
+                      {startIndex + index + 1}
+                    </td>
+                    <td className="py-2 px-3">
+                      <div className="d-flex align-items-center gap-2">
+                        <div style={{ fontWeight: "600", color: "#334155" }}>{User.name}</div>
+                        {User.isActive === false && (
+                          <Badge bg="secondary" style={{ fontSize: "0.6rem", padding: "2px 6px" }}>Inactive</Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2 px-3">
+                      <div className="d-flex flex-column gap-1">
+                        <div className="d-flex align-items-center gap-2" style={{ fontSize: "0.8rem", color: "#475569" }}>
+                          <FiPhone size={12} className="text-primary" />
+                          <span>{User.contact}</span>
+                        </div>
+                        {User.email && (
+                          <div className="d-flex align-items-center gap-2" style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                            <FiMail size={12} />
+                            <span className="text-truncate" style={{ maxWidth: "150px" }} title={User.email}>{User.email}</span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2 px-3">
+                      <span style={{
+                        background: "#f8fafc",
+                        border: "1px solid #e2e8f0",
+                        color: "#475569",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontSize: "0.75rem",
+                        fontWeight: "600",
+                        fontFamily: "monospace"
+                      }}>
+                        {User.pan}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <div className={`d-inline-flex align-items-center gap-1 px-2 py-1 rounded-pill ${User.isActive !== false ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`} style={{ fontSize: '0.7rem', fontWeight: '600' }}>
+                        {User.isActive !== false ? <FiCheckCircle size={10} /> : <FiXCircle size={10} />}
+                        <span>{User.isActive !== false ? "Active" : "Inactive"}</span>
+                      </div>
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      {(() => {
+                        const counts = clientCounts[User.id] || { years: 0, genericDocs: 0, loading: true };
+                        const count = counts.years;
+                        const isLoading = counts.loading;
+
+                        return (
+                          <Button
+                            variant="white"
+                            size="sm"
+                            className="border-0 p-1 position-relative"
+                            onClick={() => navigate("/admin/years", { state: { client: User } })}
+                            disabled={isLoading}
+                            style={{ color: count > 0 ? "#4f46e5" : "#cbd5e1" }}
+                          >
+                            {isLoading ? (
+                              <span className="spinner-border spinner-border-sm" style={{ width: '1rem', height: '1rem' }} />
+                            ) : (
+                              <div className="d-flex align-items-center justify-content-center gap-1">
+                                <FiCalendar size={16} />
+                                <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>{count}</span>
+                              </div>
+                            )}
+                          </Button>
+                        );
+                      })()}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      {(() => {
+                        const counts = clientCounts[User.id] || { years: 0, genericDocs: 0, loading: true };
+                        const genericCount = counts.genericDocs;
+                        const isLoading = counts.loading;
+
+                        return (
+                          <Button
+                            variant="white"
+                            size="sm"
+                            className="border-0 p-1"
+                            onClick={() => navigate("/admin/generic-documents", { state: { client: User } })}
+                            disabled={isLoading}
+                            style={{ color: genericCount > 0 ? "#059669" : "#cbd5e1" }}
+                          >
+                            {isLoading ? (
+                              <span className="spinner-border spinner-border-sm" style={{ width: '1rem', height: '1rem' }} />
+                            ) : (
+                              <div className="d-flex align-items-center justify-content-center gap-1">
+                                <FiFolder size={16} />
+                                <span style={{ fontWeight: '700', fontSize: '0.85rem' }}>{genericCount}</span>
+                              </div>
+                            )}
+                          </Button>
+                        );
+                      })()}
+                    </td>
+                    <td className="py-2 px-3 text-center">
+                      <div className="d-flex justify-content-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="light"
+                          className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                          style={{ width: '28px', height: '28px', color: User.isActive !== false ? '#dc2626' : '#16a34a' }}
+                          onClick={() => handleToggleActive(User)}
+                          title={User.isActive !== false ? "Deactivate" : "Activate"}
+                        >
+                          {User.isActive !== false ? <FiXCircle size={14} /> : <FiCheckCircle size={14} />}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="light"
+                          className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                          style={{ width: '28px', height: '28px', color: '#d97706' }}
+                          onClick={() => handleEdit(User)}
+                          title="Edit"
+                        >
+                          <FiEdit2 size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="light"
+                          className="p-1 rounded-circle d-flex align-items-center justify-content-center"
+                          style={{ width: '28px', height: '28px', color: '#ef4444' }}
+                          onClick={() => handleDelete(User)}
+                          title="Delete"
+                        >
+                          <FiTrash2 size={14} />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+              {!isLoadingClients && users.length === 0 && (
+                <tr>
+                  <td colSpan="8" className="text-center py-5">
+                    <div className="text-muted d-flex flex-column align-items-center">
+                      <FiUsers size={32} className="mb-2 opacity-50" />
+                      <h6 className="mb-1">No clients found</h6>
+                      <small>Add your first client to get started</small>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </Table>
+        </div>
 
 
         {/* 🔹 Pagination Footer */}
