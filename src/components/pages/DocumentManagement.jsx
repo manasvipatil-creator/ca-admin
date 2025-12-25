@@ -954,7 +954,7 @@ const DocumentManagement = () => {
               </div>
 
               <Form.Text className="text-muted d-block mt-2">
-                <i className="bi bi-info-circle"></i> Supported formats: PDF, JPG, PNG, DOC, DOCX. Files larger than 500KB will be stored in cloud storage.
+                <i className="bi bi-info-circle"></i> Supported formats: PDF, JPG, PNG. Files larger than 500KB will be stored in cloud storage.
               </Form.Text>
             </Form.Group>
 
