@@ -610,11 +610,11 @@ const NotificationManagement = () => {
               <th
                 style={{
                   padding: "12px 16px",
-                  fontWeight: "600",
+                  fontWeight: "700",
                   fontSize: "0.85rem",
                   border: "none",
                   borderBottom: '1px solid #e5e7eb',
-                  color: '#64748b',
+                  color: 'black',
                   textTransform: 'uppercase',
                   width: '20%'
                 }}
@@ -624,11 +624,11 @@ const NotificationManagement = () => {
               <th
                 style={{
                   padding: "12px 16px",
-                  fontWeight: "600",
+                  fontWeight: "700",
                   fontSize: "0.85rem",
                   border: "none",
                   borderBottom: '1px solid #e5e7eb',
-                  color: '#64748b',
+                  color: 'black',
                   textTransform: 'uppercase',
                   width: '35%'
                 }}
@@ -638,12 +638,12 @@ const NotificationManagement = () => {
               <th
                 style={{
                   padding: "12px 16px",
-                  fontWeight: "600",
+                  fontWeight: "700",
                   fontSize: "0.85rem",
                   border: "none",
                   borderBottom: '1px solid #e5e7eb',
                   textAlign: "center",
-                  color: '#64748b',
+                  color: 'black',
                   textTransform: 'uppercase',
                   width: '15%'
                 }}
@@ -653,12 +653,12 @@ const NotificationManagement = () => {
               <th
                 style={{
                   padding: "12px 16px",
-                  fontWeight: "600",
+                  fontWeight: "700",
                   fontSize: "0.85rem",
                   border: "none",
                   borderBottom: '1px solid #e5e7eb',
                   textAlign: "center",
-                  color: '#64748b',
+                  color: 'black',
                   textTransform: 'uppercase',
                   width: '15%'
                 }}
@@ -668,12 +668,12 @@ const NotificationManagement = () => {
               <th
                 style={{
                   padding: "12px 16px",
-                  fontWeight: "600",
+                  fontWeight: "700",
                   fontSize: "0.85rem",
                   border: "none",
                   borderBottom: '1px solid #e5e7eb',
                   textAlign: "center",
-                  color: '#64748b',
+                  color: 'black',
                   textTransform: 'uppercase',
                   width: '15%'
                 }}

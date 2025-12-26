@@ -523,7 +523,7 @@ const BannerManagement = () => {
                   <Row>
                     <Col md={6}>
                       <Form.Group className="mb-3">
-                        <Form.Label>Banner Name *</Form.Label>
+                        <Form.Label style={{ fontWeight: 'bold', color: 'black' }}>Banner Name *</Form.Label>
                         <Form.Control
                           type="text"
                           name="bannerName"
@@ -535,7 +535,7 @@ const BannerManagement = () => {
                       </Form.Group>
 
                       <Form.Group className="mb-3">
-                        <Form.Label>Banner Image *</Form.Label>
+                        <Form.Label style={{ fontWeight: 'bold', color: 'black' }}>Banner Image *</Form.Label>
                         <Form.Control
                           type="file"
                           accept="image/*"
@@ -629,8 +629,8 @@ const BannerManagement = () => {
                     <tr>
                       <th style={{
                         padding: '16px 24px',
-                        fontWeight: '600',
-                        color: '#64748b',
+                        fontWeight: '700',
+                        color: 'black',
                         border: 'none',
                         borderBottom: '1px solid #e5e7eb',
                         fontSize: '0.85rem',
@@ -638,8 +638,8 @@ const BannerManagement = () => {
                       }}>Sr. No</th>
                       <th style={{
                         padding: '16px 24px',
-                        fontWeight: '600',
-                        color: '#64748b',
+                        fontWeight: '700',
+                        color: '#black',
                         border: 'none',
                         borderBottom: '1px solid #e5e7eb',
                         fontSize: '0.85rem',
@@ -647,8 +647,8 @@ const BannerManagement = () => {
                       }}>Banner Name</th>
                       <th style={{
                         padding: '16px 24px',
-                        fontWeight: '600',
-                        color: '#64748b',
+                        fontWeight: '700',
+                        color: 'black',
                         border: 'none',
                         borderBottom: '1px solid #e5e7eb',
                         fontSize: '0.85rem',
@@ -656,8 +656,8 @@ const BannerManagement = () => {
                       }}>Image</th>
                       <th style={{
                         padding: '16px 24px',
-                        fontWeight: '600',
-                        color: '#64748b',
+                        fontWeight: '700',
+                        color: 'black',
                         border: 'none',
                         borderBottom: '1px solid #e5e7eb',
                         fontSize: '0.85rem',
@@ -665,8 +665,8 @@ const BannerManagement = () => {
                       }}>Created</th>
                       <th style={{
                         padding: '16px 24px',
-                        fontWeight: '600',
-                        color: '#64748b',
+                        fontWeight: '700',
+                        color: 'black',
                         border: 'none',
                         borderBottom: '1px solid #e5e7eb',
                         fontSize: '0.85rem',

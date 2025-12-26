@@ -1234,14 +1234,14 @@ const UserManagement = ({ goToReports = () => { } }) => {
               boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
             }}>
               <tr>
-                <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '4%' }}>Sr No.</th>
-                <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '20%' }}>Client Name</th>
-                <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '15%' }}>Contact Info</th>
-                <th className="py-2 px-3 text-secondary text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>PAN</th>
-                <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Status</th>
-                <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Years</th>
-                <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600' }}>Docs</th>
-                <th className="py-2 px-3 text-secondary text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: '600', width: '15%' }}>Actions</th>
+                <th className="py-2 px-3 text-uppercase" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'black', width: '4%' }}>Sr No.</th>
+                <th className="py-2 px-3 text-uppercase" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'black', width: '20%' }}>Client Name</th>
+                <th className="py-2 px-3 text-uppercase" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'black', width: '15%' }}>Contact Info</th>
+                <th className="py-2 px-3 text-uppercase" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'black' }}>PAN</th>
+                <th className="py-2 px-3 text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'black' }}>Status</th>
+                <th className="py-2 px-3 text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'black' }}>Years</th>
+                <th className="py-2 px-3 text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'black' }}>Docs</th>
+                <th className="py-2 px-3 text-center text-uppercase" style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'black', width: '15%' }}>Actions</th>
               </tr>
             </thead >
             <tbody>
