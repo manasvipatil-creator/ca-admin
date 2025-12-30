@@ -4,12 +4,12 @@ import { Card, Row, Col, Table, ProgressBar, Spinner } from "react-bootstrap";
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 import { clientHelpers, documentHelpers, firestoreHelpers } from "../../utils/firestoreHelpers";
-import { 
-  FiUsers, 
-  FiFileText, 
-  FiCalendar, 
-  FiUser, 
-  FiMail, 
+import {
+  FiUsers,
+  FiFileText,
+  FiCalendar,
+  FiUser,
+  FiMail,
   FiPhone,
   FiBarChart2,
   FiRefreshCw
@@ -42,7 +42,7 @@ const Dashboard = ({ goToClient, goToReports }) => {
       clientsRef,
       (clientsList) => {
         console.log("📊 Dashboard: Received", clientsList.length, "clients from Firestore");
-        
+
         // Debug: Log client data structure
         clientsList.forEach((client, index) => {
           console.log(`📋 Client ${index + 1} (${client.name}):`, client);
@@ -55,7 +55,7 @@ const Dashboard = ({ goToClient, goToReports }) => {
             console.log(`📅 Year keys in ${client.name}:`, yearKeys);
           }
         });
-        
+
         setClients(clientsList);
         setLoading(false);
         setLastUpdated(new Date());
@@ -83,28 +83,28 @@ const Dashboard = ({ goToClient, goToReports }) => {
     setFetchingDocs(true);
     try {
       const allDocs = [];
-      
+
       for (const client of clientsList) {
         const clientContact = client.id; // Contact number is used as document ID
-        
+
         // Get years collection for this client
         const yearsRef = getClientYearsRef(clientContact);
         if (!yearsRef) continue;
-        
+
         try {
           // Get all years for this client
           const yearsSnapshot = await firestoreHelpers.getCollection(yearsRef);
-          
+
           for (const yearDoc of yearsSnapshot) {
             const year = yearDoc.id;
-            
+
             // Get documents for this year
             const documentsRef = getYearDocumentsRef(clientContact, year);
             if (!documentsRef) continue;
-            
+
             try {
               const documents = await documentHelpers.getDocuments(documentsRef);
-              
+
               // Add client info to each document
               documents.forEach(doc => {
                 allDocs.push({
@@ -123,7 +123,7 @@ const Dashboard = ({ goToClient, goToReports }) => {
           console.log(`📅 No years found for client ${client.name}`);
         }
       }
-      
+
       console.log("📊 Total documents fetched:", allDocs.length);
       setAllDocuments(allDocs);
     } catch (error) {
@@ -161,24 +161,24 @@ const Dashboard = ({ goToClient, goToReports }) => {
 
     try {
       console.log("📅 Fetching years from Firestore subcollections...");
-      
+
       for (const client of clientsList) {
         const clientContact = client.id; // Contact number is used as document ID
-        
+
         // Get years collection for this client
         const yearsRef = getClientYearsRef(clientContact);
         if (!yearsRef) continue;
-        
+
         try {
           // Get all years for this client from subcollection
           const yearsSnapshot = await firestoreHelpers.getCollection(yearsRef);
           console.log(`📅 Found ${yearsSnapshot.length} years in subcollection for ${client.name}`);
-          
+
           // Update client's years array if it doesn't match subcollection
           if (yearsSnapshot.length > 0) {
             const subcollectionYears = yearsSnapshot.map(yearDoc => yearDoc.id);
             const clientYears = client.years || [];
-            
+
             // Check if there are years in subcollection not in client.years
             const missingYears = subcollectionYears.filter(year => !clientYears.includes(year));
             if (missingYears.length > 0) {
@@ -200,16 +200,16 @@ const Dashboard = ({ goToClient, goToReports }) => {
     const byYear = {};
     let total = 0;
     const currentYear = new Date().getFullYear();
-    
+
     // Use the fetched documents from Firestore
     allDocuments.forEach((doc) => {
       // Skip placeholder documents
-      if (doc.fileName === "placeholder.txt" || 
-          (doc.docName && doc.docName.includes("Initial Setup")) ||
-          (doc.name && doc.name.includes("Initial Setup"))) {
+      if (doc.fileName === "placeholder.txt" ||
+        (doc.docName && doc.docName.includes("Initial Setup")) ||
+        (doc.name && doc.name.includes("Initial Setup"))) {
         return;
       }
-      
+
       const year = String(doc?.year || "Unknown");
       byYear[year] = (byYear[year] || 0) + 1;
       total += 1;
@@ -225,11 +225,11 @@ const Dashboard = ({ goToClient, goToReports }) => {
           if (yearData && typeof yearData === 'object') {
             // Count documents in this year
             const yearDocuments = yearData.documents || {};
-            const realDocs = Object.values(yearDocuments).filter(doc => 
+            const realDocs = Object.values(yearDocuments).filter(doc =>
               doc.fileName !== "placeholder.txt" &&
               !(doc.docName || doc.name || "").includes("Initial Setup")
             );
-            
+
             if (realDocs.length > 0) {
               byYear[key] = (byYear[key] || 0) + realDocs.length;
               total += realDocs.length;
@@ -252,12 +252,12 @@ const Dashboard = ({ goToClient, goToReports }) => {
       if (client.documents) {
         Object.values(client.documents).forEach((doc) => {
           // Skip placeholder documents
-          if (doc.fileName === "placeholder.txt" || 
-              (doc.docName && doc.docName.includes("Initial Setup")) ||
-              (doc.name && doc.name.includes("Initial Setup"))) {
+          if (doc.fileName === "placeholder.txt" ||
+            (doc.docName && doc.docName.includes("Initial Setup")) ||
+            (doc.name && doc.name.includes("Initial Setup"))) {
             return;
           }
-          
+
           const year = String(doc?.year || "Unknown");
           if (!allDocuments.find(d => d.id === doc.id)) { // Avoid double counting
             byYear[year] = (byYear[year] || 0) + 1;
@@ -266,7 +266,7 @@ const Dashboard = ({ goToClient, goToReports }) => {
         });
       }
     });
-    
+
     const thisYear = byYear[String(currentYear)] || 0;
     const lastYear = byYear[String(currentYear - 1)] || 0;
     return { total, thisYear, lastYear, byYear, currentYear };
@@ -291,15 +291,15 @@ const Dashboard = ({ goToClient, goToReports }) => {
       // Use updatedAt or createdAt timestamp, fallback to current time
       lastActivity: client.updatedAt?.seconds || client.createdAt?.seconds || Date.now() / 1000
     }));
-    
+
     // Sort by last activity (most recent first)
     clientsWithTime.sort((a, b) => b.lastActivity - a.lastActivity);
-    
+
     return clientsWithTime.slice(0, 5);
   }, [clients]);
   const yearOptions = useMemo(() => {
     const ys = Object.keys(docStats.byYear || {}).filter((y) => y && y !== "Unknown");
-    
+
     // Custom sort function to handle both individual years and year ranges
     ys.sort((a, b) => {
       // Extract the starting year from year strings
@@ -313,10 +313,10 @@ const Dashboard = ({ goToClient, goToReports }) => {
         }
         return 0; // For any other format
       };
-      
+
       return getStartYear(b) - getStartYear(a); // Sort descending
     });
-    
+
     return ys;
   }, [docStats]);
 
@@ -325,7 +325,7 @@ const Dashboard = ({ goToClient, goToReports }) => {
   }, [docStats, selectedYear]);
 
   return (
-    <div style={{ 
+    <div style={{
       background: '#f8f9fa',
       minHeight: '100vh',
       padding: '0'
@@ -344,27 +344,27 @@ const Dashboard = ({ goToClient, goToReports }) => {
               transition: 'all 0.2s ease',
               cursor: 'pointer'
             }}
-            onClick={() => {
-              if (typeof goToClient === 'function') {
-                goToClient();
-              }
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
-              e.currentTarget.style.borderColor = '#667eea';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
-              e.currentTarget.style.borderColor = '#e5e7eb';
-            }}>
+              onClick={() => {
+                if (typeof goToClient === 'function') {
+                  goToClient();
+                }
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+                e.currentTarget.style.borderColor = '#667eea';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
+                e.currentTarget.style.borderColor = '#e5e7eb';
+              }}>
               <Card.Body style={{ padding: '28px' }}>
                 <div className="d-flex justify-content-between align-items-center">
                   <div>
-                    <div style={{ 
-                      color: '#64748b', 
-                      fontSize: '0.8rem', 
+                    <div style={{
+                      color: '#64748b',
+                      fontSize: '0.8rem',
                       fontWeight: '600',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
@@ -372,8 +372,8 @@ const Dashboard = ({ goToClient, goToReports }) => {
                     }}>
                       Total Clients
                     </div>
-                    <div style={{ 
-                      fontSize: '2.5rem', 
+                    <div style={{
+                      fontSize: '2.5rem',
                       fontWeight: '700',
                       color: '#1e293b',
                       lineHeight: '1'
@@ -404,22 +404,22 @@ const Dashboard = ({ goToClient, goToReports }) => {
               boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
               transition: 'all 0.2s ease'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-4px)';
-              e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
-              e.currentTarget.style.borderColor = '#f59e0b';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
-              e.currentTarget.style.borderColor = '#e5e7eb';
-            }}>
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+                e.currentTarget.style.borderColor = '#f59e0b';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.05)';
+                e.currentTarget.style.borderColor = '#e5e7eb';
+              }}>
               <Card.Body style={{ padding: '28px' }}>
                 <div className="d-flex justify-content-between align-items-center">
                   <div>
-                    <div style={{ 
-                      color: '#64748b', 
-                      fontSize: '0.8rem', 
+                    <div style={{
+                      color: '#64748b',
+                      fontSize: '0.8rem',
                       fontWeight: '600',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
@@ -427,8 +427,8 @@ const Dashboard = ({ goToClient, goToReports }) => {
                     }}>
                       Total Documents (Yearwise)
                     </div>
-                    <div style={{ 
-                      fontSize: '2.5rem', 
+                    <div style={{
+                      fontSize: '2.5rem',
                       fontWeight: '700',
                       color: '#1e293b',
                       lineHeight: '1',
@@ -462,7 +462,7 @@ const Dashboard = ({ goToClient, goToReports }) => {
 
         <Row className="g-4">
           {/* Year-wise snapshot */}
-          <Col lg={7}>
+          <Col lg={4}>
             <Card style={{
               border: '1px solid #e5e7eb',
               borderRadius: '16px',
@@ -533,21 +533,21 @@ const Dashboard = ({ goToClient, goToReports }) => {
                         })
                         .slice(0, 5) // Show only 5 most recent years, same as Recent Clients
                         .map(([y, count], index) => (
-                          <tr key={y} style={{ 
+                          <tr key={y} style={{
                             cursor: 'pointer',
                             backgroundColor: 'white',
                             transition: 'all 0.2s ease'
-                          }} 
-                          onClick={() => {
-                            try { localStorage.setItem('reportExportYear', y); } catch {}
-                            if (typeof goToReports === 'function') goToReports();
                           }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#f8f9fa';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'white';
-                          }}>
+                            onClick={() => {
+                              try { localStorage.setItem('reportExportYear', y); } catch { }
+                              if (typeof goToReports === 'function') goToReports();
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f8f9fa';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'white';
+                            }}>
                             <td style={{
                               padding: '16px 28px',
                               fontWeight: '500',
@@ -575,34 +575,34 @@ const Dashboard = ({ goToClient, goToReports }) => {
                               borderBottom: '1px solid #e5e7eb'
                             }}>{count}</td>
                           </tr>
-                      ))}
-                    {Object.keys(docStats.byYear).length === 0 && (
-                      <tr>
-                        <td colSpan={2} style={{
-                          padding: '40px 24px',
-                          textAlign: 'center',
-                          color: '#6c757d',
-                          fontSize: '1.1rem',
-                          border: 'none'
-                        }}>
-                          <div>
-                            <div style={{ fontSize: '3rem', marginBottom: '16px' }}>
-                              <FiBarChart2 size={48} color="#6c757d" />
+                        ))}
+                      {Object.keys(docStats.byYear).length === 0 && (
+                        <tr>
+                          <td colSpan={2} style={{
+                            padding: '40px 24px',
+                            textAlign: 'center',
+                            color: '#6c757d',
+                            fontSize: '1.1rem',
+                            border: 'none'
+                          }}>
+                            <div>
+                              <div style={{ fontSize: '3rem', marginBottom: '16px' }}>
+                                <FiBarChart2 size={48} color="#6c757d" />
+                              </div>
+                              <div>No data available</div>
                             </div>
-                            <div>No data available</div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </Table>
-              </div>
-            </Card.Body>
-          </Card>
-        </Col>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </Table>
+                </div>
+              </Card.Body>
+            </Card>
+          </Col>
 
           {/* Recent clients */}
-          <Col lg={5}>
+          <Col lg={8}>
             <Card style={{
               border: '1px solid #e5e7eb',
               borderRadius: '16px',
@@ -624,121 +624,121 @@ const Dashboard = ({ goToClient, goToReports }) => {
                   Recent Clients
                 </h5>
               </Card.Header>
-            <Card.Body className="p-0">
-              {recentClients.length === 0 ? (
-                <div style={{
-                  padding: '40px 24px',
-                  textAlign: 'center',
-                  color: '#6c757d',
-                  fontSize: '1.1rem'
-                }}>
-                  <div>
-                    <div style={{ fontSize: '3rem', marginBottom: '16px' }}>
-                      <FiUsers size={48} color="#6c757d" />
+              <Card.Body className="p-0">
+                {recentClients.length === 0 ? (
+                  <div style={{
+                    padding: '40px 24px',
+                    textAlign: 'center',
+                    color: '#6c757d',
+                    fontSize: '1.1rem'
+                  }}>
+                    <div>
+                      <div style={{ fontSize: '3rem', marginBottom: '16px' }}>
+                        <FiUsers size={48} color="#6c757d" />
+                      </div>
+                      <div style={{ fontWeight: '500', marginBottom: '8px' }}>No recent clients</div>
+                      <div style={{ fontSize: '0.9rem', color: '#adb5bd' }}>Add your first client to get started</div>
                     </div>
-                    <div style={{ fontWeight: '500', marginBottom: '8px' }}>No recent clients</div>
-                    <div style={{ fontSize: '0.9rem', color: '#adb5bd' }}>Add your first client to get started</div>
                   </div>
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <Table className="mb-0">
-                    <thead style={{
-                      background: 'white'
-                    }}>
-                      <tr>
-                        <th style={{
-                          padding: '16px 28px',
-                          fontWeight: '600',
-                          color: '#64748b',
-                          border: 'none',
-                          borderBottom: '1px solid #e5e7eb',
-                          fontSize: '0.85rem'
-                        }}>
-                          <FiUser className="me-2" size={15} />
-                          NAME
-                        </th>
-                        <th style={{
-                          padding: '16px 28px',
-                          fontWeight: '600',
-                          color: '#64748b',
-                          border: 'none',
-                          borderBottom: '1px solid #e5e7eb',
-                          fontSize: '0.85rem'
-                        }}>
-                          <FiMail className="me-2" size={15} />
-                          CONTACT
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {recentClients.map((client, i) => (
-                        <tr key={client.id || i} 
-                        style={{
-                          backgroundColor: 'white',
-                          transition: 'all 0.2s ease',
-                          cursor: 'pointer'
-                        }}
-                        onClick={() => {
-                          if (typeof goToClient === 'function') {
-                            goToClient(client.id);
-                          }
-                        }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.backgroundColor = '#f8f9fa';
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.backgroundColor = 'white';
-                        }}>
-                          <td style={{
+                ) : (
+                  <div className="table-responsive">
+                    <Table className="mb-0">
+                      <thead style={{
+                        background: 'white'
+                      }}>
+                        <tr>
+                          <th style={{
                             padding: '16px 28px',
-                            fontWeight: '500',
-                            color: '#1e293b',
+                            fontWeight: '600',
+                            color: '#64748b',
                             border: 'none',
-                            borderBottom: '1px solid #e5e7eb'
+                            borderBottom: '1px solid #e5e7eb',
+                            fontSize: '0.85rem'
                           }}>
-                            <div className="d-flex align-items-center">
-                              <div style={{
-                                width: '40px',
-                                height: '40px',
-                                background: '#667eea',
-                                borderRadius: '10px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                marginRight: '14px',
-                                fontSize: '0.9rem',
-                                fontWeight: '600',
-                                color: 'white'
-                              }}>
-                                {client.name?.charAt(0)?.toUpperCase() || '?'}
-                              </div>
-                              <div>
-                                <div style={{ fontWeight: '600', fontSize: '0.9rem', marginBottom: '3px', color: '#1e293b' }}>{client.name}</div>
-                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                                  PAN: {client.pan || 'N/A'}
+                            <FiUser className="me-2" size={15} />
+                            NAME
+                          </th>
+                          <th style={{
+                            padding: '16px 28px',
+                            fontWeight: '600',
+                            color: '#64748b',
+                            border: 'none',
+                            borderBottom: '1px solid #e5e7eb',
+                            fontSize: '0.85rem'
+                          }}>
+                            <FiMail className="me-2" size={15} />
+                            CONTACT
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentClients.map((client, i) => (
+                          <tr key={client.id || i}
+                            style={{
+                              backgroundColor: 'white',
+                              transition: 'all 0.2s ease',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => {
+                              if (typeof goToClient === 'function') {
+                                goToClient(client.id);
+                              }
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.backgroundColor = '#f8f9fa';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.backgroundColor = 'white';
+                            }}>
+                            <td style={{
+                              padding: '16px 28px',
+                              fontWeight: '500',
+                              color: '#1e293b',
+                              border: 'none',
+                              borderBottom: '1px solid #e5e7eb'
+                            }}>
+                              <div className="d-flex align-items-center">
+                                <div style={{
+                                  width: '60px',
+                                  height: '40px',
+                                  background: '#667eea',
+                                  borderRadius: '10px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  marginRight: '14px',
+                                  fontSize: '0.9rem',
+                                  fontWeight: '600',
+                                  color: 'white'
+                                }}>
+                                  {client.name?.charAt(0)?.toUpperCase() || '?'}
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: '600', fontSize: '0.9rem', marginBottom: '3px', color: '#1e293b' }}>{client.name}</div>
+                                  <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                    PAN: {client.pan || 'N/A'}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td style={{
-                            padding: '16px 28px',
-                            border: 'none',
-                            borderBottom: '1px solid #e5e7eb'
-                          }}>
-                            <div style={{ fontSize: '0.85rem' }}>
-                              <div style={{ marginBottom: '3px', color: '#1e293b' }}>{client.email || 'No email'}</div>
-                              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                                {client.contact || 'No contact'}
+                            </td>
+                            <td style={{
+                              padding: '16px 28px',
+                              border: 'none',
+                              borderBottom: '1px solid #e5e7eb'
+                            }}>
+                              <div style={{ fontSize: '0.85rem' }}>
+                                <div style={{ marginBottom: '3px', color: '#1e293b' }}>{client.email || 'No email'}</div>
+                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                  {client.contact || 'No contact'}
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
-                </div>
-              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </Table>
+                  </div>
+                )}
               </Card.Body>
             </Card>
           </Col>
