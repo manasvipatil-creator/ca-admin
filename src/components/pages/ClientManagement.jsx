@@ -3107,9 +3107,11 @@ const UserManagement = ({ goToReports = () => { } }) => {
     </div>
     
     <div class="footer">
-        <p>Generated on: ${new Date().toLocaleDateString(
-                      "en-IN"
-                    )} at ${new Date().toLocaleTimeString("en-IN")}</p>
+        <p>Generated on: ${new Date().toLocaleDateString("en-IN", {
+                      day: '2-digit',
+                      month: '2-digit',
+                      year: 'numeric'
+                    })} at ${new Date().toLocaleTimeString("en-IN")}</p>
         <p>Total Documents: ${previewDocuments.length}</p>
         <p>CA Admin System © 2025</p>
     </div>

@@ -781,12 +781,15 @@ const BannerManagement = () => {
                           borderBottom: '1px solid #e5e7eb'
                         }}>
                           <small style={{ color: '#64748b', fontSize: '0.85rem' }}>
-                            {banner.createdAt ?
-                              new Date(banner.createdAt).toLocaleDateString('en-IN') :
-                              banner.createdAt && banner.createdAt.toDate ?
-                                banner.createdAt.toDate().toLocaleDateString('en-IN') :
-                                'N/A'
-                            }
+                            {(() => {
+                              if (!banner.createdAt) return 'N/A';
+                              const date = banner.createdAt.toDate ? banner.createdAt.toDate() : new Date(banner.createdAt);
+                              if (isNaN(date.getTime())) return 'N/A';
+                              const day = String(date.getDate()).padStart(2, '0');
+                              const month = String(date.getMonth() + 1).padStart(2, '0');
+                              const year = date.getFullYear();
+                              return `${day}/${month}/${year}`;
+                            })()}
                           </small>
                         </td>
                         <td style={{

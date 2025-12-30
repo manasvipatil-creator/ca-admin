@@ -150,6 +150,21 @@ const GenericDocumentManagement = () => {
     }, 500);
   };
 
+  // Helper to format date as DD/MM/YYYY
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    try {
+      const d = new Date(dateString);
+      if (isNaN(d.getTime())) return 'N/A';
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch (e) {
+      return 'N/A';
+    }
+  };
+
   const handleCloseViewModal = () => {
     setShowViewModal(false);
     setIsLoadingDocument(false);
@@ -592,7 +607,7 @@ const GenericDocumentManagement = () => {
                       <strong>{doc.name || doc.docName}</strong>
                     </td>
                     <td style={{ padding: '16px 20px', textAlign: 'center', border: 'none', borderBottom: '1px solid #e9ecef' }}>
-                      {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'N/A'}
+                      {formatDate(doc.uploadedAt)}
                     </td>
                     <td style={{ padding: '16px 20px', textAlign: 'center', border: 'none', borderBottom: '1px solid #e9ecef' }}>
                       <div className="d-flex gap-2 justify-content-center">

@@ -1,456 +1,196 @@
 import React, { useState, useEffect } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
-import { Button } from 'react-bootstrap';
+import { Button, Table, Spinner, ButtonGroup, Alert } from 'react-bootstrap';
 import { storage } from '../firebase';
 import { ref as storageRef, getDownloadURL } from 'firebase/storage';
+import * as mammoth from 'mammoth';
+import * as XLSX from 'xlsx';
 import './DocumentViewer.css';
 
-// Import react-pdf styles (correct paths for v10)
+// Import react-pdf styles
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-// Configure PDF.js worker - use CDN for react-pdf v10
+// Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
-// Helper function to detect Firebase Storage URLs
-const isFirebaseUrl = (url = "") =>
-  url.startsWith("https://firebasestorage.googleapis.com/");
-
-const DocumentViewer = ({ fileUrl, fileData, fileType, fileName, storagePath, forceInlinePreview = false }) => {
+const DocumentViewer = ({ fileUrl, fileData, fileType, fileName, storagePath }) => {
   const [numPages, setNumPages] = useState(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [pdfError, setPdfError] = useState(null);
-  const [scale, setScale] = useState(1.0);
   const [blobUrl, setBlobUrl] = useState(null);
-  const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [officeContent, setOfficeContent] = useState(null);
+  const [officeType, setOfficeType] = useState(null);
+  const [viewerType, setViewerType] = useState('google');
 
-  // Fetch download URL from Firebase Storage (signed URLs bypass CORS)
+  const isDocx = fileName?.toLowerCase().endsWith('.docx');
+  const isOldDoc = fileName?.toLowerCase().endsWith('.doc');
+  const isWord = isDocx || isOldDoc;
+  const isExcel = fileName?.match(/\.(xls|xlsx)$/i) || fileType?.includes('sheet');
+  const isPdf = fileType?.includes('pdf') || fileName?.toLowerCase().endsWith('.pdf');
+  const isImage = fileType?.startsWith('image/') || fileName?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+
   useEffect(() => {
-    const fetchFileUrl = async () => {
-      console.log("🔄 fetchFileUrl called with:", {
-        hasFileData: !!fileData,
-        hasStoragePath: !!storagePath,
-        hasFileUrl: !!fileUrl,
-        fileUrl: fileUrl
-      });
+    const loadDocument = async () => {
+      setIsLoading(true);
+      setPdfError(null);
+      setOfficeContent(null);
 
-      // If we have fileData (base64), use it directly
-      if (fileData) {
-        console.log("✅ Using fileData directly (base64)");
-        setBlobUrl(fileData);
-        return;
-      }
-
-      // If we have storagePath, get download URL using Firebase SDK
-      if (storagePath) {
-        setIsLoadingPdf(true);
-        try {
-          console.log("📥 Getting download URL from Firebase Storage using storagePath:", storagePath);
+      try {
+        let currentUrl = fileUrl;
+        if (storagePath) {
           const fileRef = storageRef(storage, storagePath);
-
-          // Get a signed download URL with auth token (bypasses CORS!)
-          const downloadUrl = await getDownloadURL(fileRef);
-          console.log("✅ Got signed download URL from storagePath");
-
-          setBlobUrl(downloadUrl);
-          setIsLoadingPdf(false);
-        } catch (error) {
-          console.error("❌ Failed to get download URL from storagePath:", error);
-          setPdfError("Failed to load file. Please try downloading instead.");
-          setIsLoadingPdf(false);
+          currentUrl = await getDownloadURL(fileRef);
         }
-      } else if (fileUrl) {
-        setIsLoadingPdf(true);
+        setBlobUrl(currentUrl || fileData);
 
-        try {
-          console.log("🔍 Processing fileUrl:", fileUrl);
+        // Direct rendering for modern Office files (DOCX/XLSX)
+        if ((currentUrl || fileData) && (isDocx || isExcel)) {
+          try {
+            const source = currentUrl || fileData;
+            const response = await fetch(source);
+            if (!response.ok) throw new Error("CORS");
+            const arrayBuffer = await response.arrayBuffer();
 
-          // Firebase Storage URL pattern: 
-          // https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encodedPath}?alt=media&token={token}
-          if (fileUrl.includes('firebasestorage.googleapis.com')) {
-            console.log("🔥 Detected Firebase Storage URL");
-
-            // Check if URL already has a token (signed URL)
-            if (fileUrl.includes('token=')) {
-              console.log("✅ URL already has auth token, using directly");
-              setBlobUrl(fileUrl);
-              setIsLoadingPdf(false);
-              return;
+            if (isDocx) {
+              const result = await mammoth.convertToHtml({ arrayBuffer });
+              setOfficeContent(result.value);
+              setOfficeType('word');
+              setViewerType('direct');
+            } else if (isExcel) {
+              const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+              const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+              const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+              setOfficeContent(jsonData);
+              setOfficeType('excel');
+              setViewerType('direct');
             }
-
-            // If no token, try to get a fresh signed URL from storage path
-            console.log("🔑 No token found, extracting path to get signed URL...");
-            const urlParts = fileUrl.split('/o/')[1];
-            if (urlParts) {
-              const encodedPath = urlParts.split('?')[0];
-              const decodedPath = decodeURIComponent(encodedPath);
-
-              console.log("📍 Extracted storage path:", decodedPath);
-
-              // Use Firebase SDK to get signed download URL
-              const fileRef = storageRef(storage, decodedPath);
-              const downloadUrl = await getDownloadURL(fileRef);
-              console.log("✅ Got signed download URL from extracted path");
-
-              setBlobUrl(downloadUrl);
-              setIsLoadingPdf(false);
-              return;
-            }
+          } catch (err) {
+            setViewerType('google');
           }
-
-          // For non-Firebase URLs, use directly
-          console.log("🌐 Using non-Firebase URL directly");
-          setBlobUrl(fileUrl);
-          setIsLoadingPdf(false);
-        } catch (error) {
-          console.error("❌ Failed to process URL:", error);
-          console.error("❌ Error details:", {
-            message: error.message,
-            name: error.name
-          });
-
-          // Fallback - try using the original URL
-          console.warn("⚠️ Fallback: using original fileUrl");
-          setBlobUrl(fileUrl);
-          setPdfError(null); // Clear error and try anyway
-          setIsLoadingPdf(false);
         }
-      } else {
-        console.warn("⚠️ No file source available (no fileData, storagePath, or fileUrl)");
-        setPdfError("No file source available");
+      } catch (error) {
+        setPdfError(error.message);
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    fetchFileUrl();
+    loadDocument();
+  }, [fileUrl, fileData, storagePath, fileName, isDocx, isExcel]);
 
-    // Cleanup blob URL on unmount
-    return () => {
-      if (blobUrl && blobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(blobUrl);
-      }
-    };
-  }, [fileUrl, fileData, storagePath]);
+  if (isLoading) {
+    return (
+      <div className="text-center py-5">
+        <Spinner animation="border" variant="primary" />
+        <p className="mt-2 text-muted small">Opening Document...</p>
+      </div>
+    );
+  }
 
-  const onDocumentLoadSuccess = ({ numPages }) => {
-    setNumPages(numPages);
-    setPageNumber(1);
-    setPdfError(null);
-    console.log("✅ PDF loaded successfully, pages:", numPages);
-  };
+  // --- RENDERING ---
 
-  const onDocumentLoadError = (error) => {
-    console.error("❌ PDF load error:", error);
-    setPdfError(error.message || "Failed to load PDF");
-  };
-
-  const goToPrevPage = () => {
-    setPageNumber(prev => Math.max(prev - 1, 1));
-  };
-
-  const goToNextPage = () => {
-    setPageNumber(prev => Math.min(prev + 1, numPages));
-  };
-
-  const zoomIn = () => {
-    setScale(prev => Math.min(prev + 0.2, 2.0));
-  };
-
-  const zoomOut = () => {
-    setScale(prev => Math.max(prev - 0.2, 0.5));
-  };
-
-  // Determine file source - use blobUrl which contains the signed URL
-  const fileSrc = blobUrl;
-
-  // Log what we're using for the PDF
-  useEffect(() => {
-    if (fileSrc) {
-      console.log("📄 Using fileSrc for PDF:", fileSrc);
-      console.log("📄 fileSrc type:", typeof fileSrc);
-      console.log("📄 fileSrc starts with blob:", fileSrc.startsWith('blob:'));
-      console.log("📄 fileSrc starts with http:", fileSrc.startsWith('http'));
+  if (isWord || isExcel) {
+    if (viewerType === 'direct' && officeContent) {
+      return (
+        <div className="bg-white p-4 border rounded shadow-sm overflow-auto" style={{ maxHeight: '75vh' }}>
+          {officeType === 'word' ? (
+            <div dangerouslySetInnerHTML={{ __html: officeContent }} style={{ fontFamily: 'serif', color: '#111', lineHeight: '1.6' }} />
+          ) : (
+            <Table striped bordered hover size="sm" className="mb-0">
+              <tbody>
+                {officeContent.map((row, i) => (
+                  <tr key={i}>{row.map((cell, j) => <td key={j} style={{ whiteSpace: 'nowrap' }}>{cell}</td>)}</tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </div>
+      );
     }
-  }, [fileSrc]);
 
-  // 🔥 Handle Firebase URLs without base64 - open in new tab to bypass CORS/CSP
-  // BUT if forceInlinePreview is true, skip this and let it fallback to iframe
-  if (!fileData && fileSrc && isFirebaseUrl(fileSrc) && !forceInlinePreview) {
-    console.log("🌍 Firebase URL detected without base64, opening in new tab:", fileSrc);
-
-    // Only open once (avoid re-renders opening multiple tabs)
-    if (!window.__lastOpenedPdf || window.__lastOpenedPdf !== fileSrc) {
-      window.__lastOpenedPdf = fileSrc;
-      window.open(fileSrc, "_blank", "noopener,noreferrer");
-    }
+    // ONLINE VIEWERS - Use high-compatibility URLs
+    const encodedUrl = encodeURIComponent(blobUrl || '');
+    const googleUrl = `https://docs.google.com/viewer?url=${encodedUrl}&embedded=true`;
+    const microsoftUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodedUrl}`;
+    const iframeSrc = viewerType === 'google' ? googleUrl : microsoftUrl;
 
     return (
-      <div style={{ padding: 16 }}>
-        <div className="alert alert-info">
-          <h5>📄 Document Opened in New Tab</h5>
-          <p>
-            This document is opened in a new tab because inline preview is blocked by
-            browser security (CORS/CSP).
-          </p>
-          <p className="mb-0">
-            If it didn't open automatically,{" "}
-            <a href={fileSrc} target="_blank" rel="noopener noreferrer" className="alert-link">
-              click here to open the PDF
-            </a>
-            .
-          </p>
+      <div className="office-viewer">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <div className="d-flex align-items-center">
+            <span className="small text-muted fw-bold me-2">Preview Mode:</span>
+            <ButtonGroup size="sm">
+              <Button variant={viewerType === 'google' ? "primary" : "outline-secondary"} onClick={() => setViewerType('google')}>Google</Button>
+              <Button variant={viewerType === 'microsoft' ? "primary" : "outline-secondary"} onClick={() => setViewerType('microsoft')}>Microsoft</Button>
+            </ButtonGroup>
+          </div>
+          <Button variant="outline-primary" size="sm" onClick={() => window.open(blobUrl, '_blank')}>
+            View in Full Browser
+          </Button>
+        </div>
+
+        <div style={{ width: '100%', height: '60vh', borderRadius: '10px', overflow: 'hidden', border: '1px solid #dee2e6', background: '#fff' }}>
+          <iframe
+            src={iframeSrc}
+            width="100%"
+            height="100%"
+            style={{ border: 'none' }}
+            title={fileName}
+            key={viewerType}
+          />
+        </div>
+
+        <Alert variant="info" className="mt-3 p-2 small text-center border-0 shadow-sm">
+          If the preview above is blank, click <strong>"View in Full Browser"</strong> to see the document content.
+        </Alert>
+
+        <div className="text-center mt-3">
+          <Button variant="success" size="sm" className="px-5 shadow-sm" onClick={() => window.open(blobUrl, '_blank')}>
+            Download Original File
+          </Button>
         </div>
       </div>
     );
   }
 
-  // Check if it's an image
-  const isImage = fileType?.startsWith('image/') ||
-    fileName?.match(/\.(jpg|jpeg|png|gif|bmp|webp)$/i) ||
-    (fileData && fileData.startsWith('data:image/'));
-
-  // Check if it's a PDF
-  const isPdf = fileType?.includes('pdf') ||
-    fileName?.endsWith('.pdf') ||
-    (fileData && fileData.startsWith('data:application/pdf'));
-
   if (isImage) {
-    if (isLoadingPdf) {
-      return (
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary mb-2" role="status">
-            <span className="visually-hidden">Loading image...</span>
-          </div>
-          <div className="small text-muted">Loading image from storage...</div>
-        </div>
-      );
-    }
-
     return (
-      <div className="text-center">
-        <img
-          src={fileSrc}
-          alt={fileName}
-          style={{
-            maxWidth: '100%',
-            maxHeight: '600px',
-            objectFit: 'contain',
-            borderRadius: '5px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-          }}
-          onError={(e) => {
-            console.error("❌ Image failed to load");
-            e.target.style.display = 'none';
-            e.target.nextSibling.style.display = 'block';
-          }}
-        />
-        <div style={{ display: 'none' }} className="alert alert-warning mt-3">
-          ⚠️ Unable to display image. The file may be corrupted or the URL may be invalid.
-        </div>
+      <div className="text-center p-3 bg-white border rounded">
+        <img src={blobUrl} alt={fileName} style={{ maxWidth: '100%', maxHeight: '65vh', borderRadius: '4px' }} />
       </div>
     );
   }
 
   if (isPdf) {
-    // If there's a PDF error, show iframe instead (works with Firebase signed URLs)
-    if (pdfError && blobUrl) {
-      console.log("⚠️ PDF.js failed, using iframe fallback for:", blobUrl);
-      return (
-        <div className="pdf-viewer-container">
-          <div className="alert alert-info mb-3">
-            <strong>ℹ️ Using alternate PDF viewer</strong>
-            <div className="small mt-1">The PDF is displayed using your browser's built-in viewer.</div>
-          </div>
-
-          {/* PDF in iframe - works with Firebase signed URLs without CORS */}
-          <div style={{
-            width: '100%',
-            height: '600px',
-            border: '1px solid #dee2e6',
-            borderRadius: '5px',
-            overflow: 'hidden'
-          }}>
-            <iframe
-              src={blobUrl}
-              width="100%"
-              height="100%"
-              style={{ border: 'none' }}
-              title={fileName}
-            />
-          </div>
-
-          <div className="mt-3 text-center">
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                window.open(blobUrl, '_blank');
-              }}
-            >
-              📥 Open in New Tab
-            </Button>
+    if (pdfError && pdfError !== "native") {
+      return <iframe src={blobUrl} width="100%" height="600px" style={{ border: 'none', borderRadius: '8px' }} title={fileName} />;
+    }
+    return (
+      <div className="pdf-viewer">
+        <div className="d-flex justify-content-between align-items-center mb-2 p-2 bg-secondary text-white rounded shadow-sm">
+          <div className="small fw-bold">Page {pageNumber} of {numPages || '?'}</div>
+          <div className="d-flex gap-2">
+            <Button size="sm" variant="light" onClick={() => setPageNumber(p => Math.max(1, p - 1))} disabled={pageNumber <= 1}>Previous</Button>
+            <Button size="sm" variant="light" onClick={() => setPageNumber(p => Math.min(numPages || 1, p + 1))} disabled={pageNumber >= (numPages || 1)}>Next</Button>
           </div>
         </div>
-      );
-    }
-
-    return (
-      <div className="pdf-viewer-container">
-        {isLoadingPdf ? (
-          <div className="text-center py-5">
-            <div className="spinner-border text-primary mb-2" role="status">
-              <span className="visually-hidden">Loading PDF...</span>
-            </div>
-            <div className="small text-muted">Fetching PDF from storage...</div>
-          </div>
-        ) : pdfError ? (
-          <div className="alert alert-danger">
-            <strong>❌ Error loading PDF:</strong> {pdfError}
-            <div className="mt-2">
-              <small>Try downloading the file instead.</small>
-            </div>
-            {(blobUrl || fileUrl) && (
-              <div className="mt-3">
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => {
-                    const link = document.createElement('a');
-                    link.href = blobUrl || fileUrl;
-                    link.download = fileName;
-                    link.target = '_blank';
-                    link.click();
-                  }}
-                >
-                  📥 Download PDF
-                </Button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <>
-            {/* PDF Controls */}
-            <div className="d-flex justify-content-between align-items-center mb-3 p-2 bg-light rounded">
-              <div className="d-flex gap-2">
-                <Button
-                  variant="outline-secondary"
-                  size="sm"
-                  onClick={zoomOut}
-                  disabled={scale <= 0.5}
-                >
-                  🔍−
-                </Button>
-                <Button
-                  variant="outline-secondary"
-                  size="sm"
-                  onClick={zoomIn}
-                  disabled={scale >= 2.0}
-                >
-                  🔍+
-                </Button>
-                <span className="align-self-center small text-muted">
-                  {Math.round(scale * 100)}%
-                </span>
-              </div>
-
-              {numPages && (
-                <div className="d-flex gap-2 align-items-center">
-                  <Button
-                    variant="outline-primary"
-                    size="sm"
-                    onClick={goToPrevPage}
-                    disabled={pageNumber <= 1}
-                  >
-                    ← Prev
-                  </Button>
-                  <span className="small">
-                    Page {pageNumber} of {numPages}
-                  </span>
-                  <Button
-                    variant="outline-primary"
-                    size="sm"
-                    onClick={goToNextPage}
-                    disabled={pageNumber >= numPages}
-                  >
-                    Next →
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* PDF Document */}
-            <div className="pdf-document-wrapper" style={{
-              maxHeight: '500px',
-              overflow: 'auto',
-              border: '1px solid #dee2e6',
-              borderRadius: '5px',
-              backgroundColor: '#f8f9fa',
-              display: 'flex',
-              justifyContent: 'center',
-              padding: '20px'
-            }}>
-              <Document
-                file={fileSrc}
-                onLoadSuccess={onDocumentLoadSuccess}
-                onLoadError={onDocumentLoadError}
-                options={{
-                  cMapUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/cmaps/`,
-                  cMapPacked: true,
-                  standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${pdfjs.version}/standard_fonts/`,
-                }}
-                loading={
-                  <div className="text-center py-5">
-                    <div className="spinner-border text-primary mb-2" role="status">
-                      <span className="visually-hidden">Loading PDF...</span>
-                    </div>
-                    <div className="small text-muted">Loading PDF...</div>
-                  </div>
-                }
-              >
-                <Page
-                  pageNumber={pageNumber}
-                  scale={scale}
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                />
-              </Document>
-            </div>
-          </>
-        )}
+        <div className="p-2 bg-dark rounded overflow-auto d-flex justify-content-center shadow-lg" style={{ maxHeight: '60vh' }}>
+          <Document file={blobUrl} onLoadSuccess={({ numPages }) => setNumPages(numPages)} onLoadError={(e) => setPdfError(e.message)}>
+            <Page pageNumber={pageNumber} scale={1.2} />
+          </Document>
+        </div>
       </div>
     );
   }
 
-  // For other file types
   return (
-    <div className="text-center p-4">
-      <div className="mb-3">
-        <div style={{ fontSize: '4rem', color: '#6c757d' }}>📄</div>
-      </div>
-      <div className="mb-2">
-        <strong>File:</strong> {fileName}
-      </div>
-      <div className="small text-muted mb-3">
-        {fileType || 'Unknown file type'}
-      </div>
-      <div className="small text-warning">
-        <em>Preview not available for this file type</em>
-      </div>
-      {fileSrc && (
-        <div className="mt-3">
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              const link = document.createElement('a');
-              link.href = fileSrc;
-              link.download = fileName;
-              link.click();
-            }}
-          >
-            📥 Download File
-          </Button>
-        </div>
-      )}
+    <div className="text-center p-5 border rounded bg-light">
+      <div style={{ fontSize: '4rem', opacity: 0.1 }}>📄</div>
+      <h6 className="mt-3 font-weight-bold text-dark">{fileName}</h6>
+      <p className="small text-muted mb-4">No online preview available for this file type.</p>
+      <Button variant="primary" className="shadow-sm" onClick={() => window.open(blobUrl, '_blank')}>Download File</Button>
     </div>
   );
 };
