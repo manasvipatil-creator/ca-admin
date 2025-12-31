@@ -432,7 +432,10 @@ const DocumentManagement = () => {
               console.log("📤 Uploading file to Firebase Storage...");
               const timestamp = Date.now();
               const randomSuffix = Math.floor(Math.random() * 10000);
-              const fileExtension = fileObj.file.name.split('.').pop();
+              let fileExtension = fileObj.file.name.split('.').pop();
+              if (fileExtension && fileExtension.toLowerCase() === 'doc') {
+                fileExtension = 'docx';
+              }
               const storageFileName = `${timestamp}_${randomSuffix}_${fileObj.docName.replace(/[^a-zA-Z0-9]/g, '_')}.${fileExtension}`;
 
               // Create storage reference
@@ -467,7 +470,9 @@ const DocumentManagement = () => {
             name: fileObj.docName,
             docName: fileObj.docName,
             year: fileObj.year,
-            fileName: fileObj.fileName,
+            fileName: fileObj.fileName.toLowerCase().endsWith('.doc')
+              ? fileObj.fileName.substring(0, fileObj.fileName.length - 4) + '.docx'
+              : fileObj.fileName,
             fileUrl: fileUrl, // Firebase Storage URL - primary source for file access
             storagePath: storagePath, // Storage path for direct Firebase SDK access
             fileData: shouldStoreFileData ? base64Data : null, // Base64 data for preview (up to 1MB)
@@ -604,9 +609,13 @@ const DocumentManagement = () => {
   console.log("🔍 Total documents:", documents.length);
   console.log("🔍 Real documents after filter:", realDocuments.length);
 
-  const filteredDocuments = filterYear
+  const filteredDocuments = (filterYear
     ? realDocuments.filter(doc => doc.year === filterYear.toString())
-    : realDocuments;
+    : realDocuments).sort((a, b) => {
+      const dateA = new Date(a.uploadedAt || a.createdAt || 0);
+      const dateB = new Date(b.uploadedAt || b.createdAt || 0);
+      return dateB - dateA;
+    });
 
   return (
     <div>

@@ -146,11 +146,7 @@ const DocumentViewer = ({ fileUrl, fileData, fileType, fileName, storagePath }) 
           If the preview above is blank, click <strong>"View in Full Browser"</strong> to see the document content.
         </Alert>
 
-        <div className="text-center mt-3">
-          <Button variant="success" size="sm" className="px-5 shadow-sm" onClick={() => window.open(blobUrl, '_blank')}>
-            Download Original File
-          </Button>
-        </div>
+
       </div>
     );
   }

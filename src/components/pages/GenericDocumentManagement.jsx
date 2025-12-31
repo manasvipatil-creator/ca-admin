@@ -79,7 +79,13 @@ const GenericDocumentManagement = () => {
         const unsubscribe = firestoreHelpers.subscribe(
           genericDocsCollectionRef,
           (docsArray) => {
-            setDocuments(docsArray);
+            // Sort new to old
+            const sortedDocs = docsArray.sort((a, b) => {
+              const dateA = new Date(a.uploadedAt || a.createdAt || 0);
+              const dateB = new Date(b.uploadedAt || b.createdAt || 0);
+              return dateB - dateA;
+            });
+            setDocuments(sortedDocs);
             console.log("📂 Loaded generic documents from Firestore:", docsArray.length);
             setIsLoadingDocuments(false);
           },
@@ -409,8 +415,14 @@ const GenericDocumentManagement = () => {
           const timestamp = Date.now();
           const randomSuffix = Math.floor(Math.random() * 10000);
 
+          // Handle .doc to .docx conversion (renaming)
+          let finalFileName = fileObj.fileName;
+          if (finalFileName.toLowerCase().endsWith('.doc')) {
+            finalFileName = finalFileName.substring(0, finalFileName.length - 4) + '.docx';
+          }
+
           // Ensure file name is safe
-          const safeFileName = fileObj.file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+          const safeFileName = finalFileName.replace(/[^a-zA-Z0-9.-]/g, '_');
           const storagePath = `${safeEmail}/clients/${clientContact}/generic/${timestamp}_${randomSuffix}_${safeFileName}`;
           const fileRef = storageRef(storage, storagePath);
 
@@ -423,7 +435,7 @@ const GenericDocumentManagement = () => {
             customMetadata: {
               uploadedBy: userEmail,
               clientContact: clientContact,
-              originalName: fileObj.fileName
+              originalName: finalFileName
             }
           };
 
@@ -435,7 +447,7 @@ const GenericDocumentManagement = () => {
           const newDoc = {
             name: fileObj.docName,
             docName: fileObj.docName,
-            fileName: fileObj.fileName,
+            fileName: finalFileName,
             fileUrl: fileUrl,
             storagePath: storagePath, // Storage path for Firebase SDK access
             fileType: fileObj.file.type, // MIME type for proper rendering

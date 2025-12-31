@@ -33,17 +33,17 @@ const MigrationPanel = () => {
     try {
       const safeEmail = getSafeEmail(userEmail);
       const result = await migrationUtils.migrateUserData(safeEmail);
-      
+
       if (result.success) {
         addLog(`Migration completed successfully! Migrated ${result.operationCount} documents.`, 'success');
         setMigrationResults(result);
-        
+
         // Run verification
         addLog('Running verification...');
         const verification = await verifyUserMigration(safeEmail);
         setVerificationResults(verification);
         addLog('Verification completed', 'success');
-        
+
         setMigrationStatus('completed');
       } else {
         addLog(`Migration failed: ${result.error}`, 'error');
@@ -73,9 +73,9 @@ const MigrationPanel = () => {
         .map(email => email.replace(/\./g, '_')); // Convert to safe email format
 
       addLog(`Migrating ${emailList.length} users...`);
-      
+
       const result = await migrationUtils.runFullMigration(emailList);
-      
+
       if (result.success) {
         addLog(`Migration completed successfully!`, 'success');
         addLog(`Total: ${result.summary.total}, Successful: ${result.summary.successful}, Failed: ${result.summary.failed}`, 'info');
@@ -99,12 +99,12 @@ const MigrationPanel = () => {
     }
 
     addLog('Running verification for current user...');
-    
+
     try {
       const safeEmail = getSafeEmail(userEmail);
       const verification = await verifyUserMigration(safeEmail);
       setVerificationResults(verification);
-      
+
       if (verification.error) {
         addLog(`Verification failed: ${verification.error}`, 'error');
       } else {
