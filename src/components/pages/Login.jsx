@@ -206,7 +206,7 @@ const Login = ({ onSuccess }) => {
           <div className="logo-container">
             {/* Try to use the logo, fallback to text if missing */}
             <img
-              src="/calogo.jpg"
+              src="/ca.jpeg"
               alt="CA Admin Logo"
               className="app-logo"
               onError={(e) => { e.target.onerror = null; e.target.src = "/ca.jpeg"; }}

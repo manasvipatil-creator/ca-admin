@@ -45,6 +45,8 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
       const sanitizedPAN = client.pan.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
       if (sanitizedPAN.length === 0) {
         errors.push('PAN number is required');
+      } else if (sanitizedPAN.length !== 10) {
+        errors.push('PAN must be 10 characters');
       }
       // REMOVED: Strict PAN format validation
     }
@@ -105,7 +107,7 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
         const essentialFields = ['name', 'contact', 'pan'];
         const missingFields = essentialFields.filter(field => columnIndices[field] === -1);
         if (missingFields.length > 0) {
-          setError(`Missing essential columns: ${missingFields.join(', ')}. Please ensure your file has columns for Name, Contact, and PAN. Email is optional.`);
+          setError(`Invalid File Format: Missing essential columns: ${missingFields.join(', ')}. Please ensure your file has columns for Name, Contact, and PAN. Email is optional.`);
           return;
         }
 
@@ -129,17 +131,17 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
               // Email is optional, store as provided if exists
               email: rawEmail.trim().toLowerCase()
             };
-            
+
             const errors = validateClientData(client);
-            
+
             // Mark as valid if only email warnings (not actual errors)
-            const hasCriticalErrors = errors.some(error => 
+            const hasCriticalErrors = errors.some(error =>
               !error.includes('Email format appears invalid')
             );
-            
-            return { 
-              ...client, 
-              errors, 
+
+            return {
+              ...client,
+              errors,
               isValid: !hasCriticalErrors,
               rawName, // Keep raw values for display
               rawEmail
@@ -281,7 +283,7 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
       [''],
       ['Sample names with special characters are included in the data']
     ]);
-    
+
     XLSX.utils.book_append_sheet(workbook, notesWorksheet, 'Import Notes');
 
     // Generate and download file
@@ -314,8 +316,8 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
                   <li>PAN: Any alphanumeric format accepted</li>
                 </ul>
               </div>
-              <Button 
-                variant="outline-success" 
+              <Button
+                variant="outline-success"
                 size="sm"
                 onClick={downloadSampleExcel}
                 className="ms-3"
@@ -328,9 +330,8 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
 
           <div
             {...getRootProps()}
-            className={`border-2 border-dashed rounded p-4 text-center ${
-              isDragActive ? 'border-primary bg-light' : 'border-secondary'
-            }`}
+            className={`border-2 border-dashed rounded p-4 text-center ${isDragActive ? 'border-primary bg-light' : 'border-secondary'
+              }`}
             style={{ cursor: 'pointer', minHeight: '150px' }}
           >
             <input {...getInputProps()} />
@@ -354,7 +355,7 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
           <div className="d-flex justify-content-between align-items-center mb-3">
             <div>
               <Badge bg="success" className="me-2">{validCount} Ready to Import</Badge>
-              <Badge bg="warning" className="me-2">{invalidCount} Needs Fixing</Badge>
+              <Badge bg="danger" className="me-2">{invalidCount} Invalid</Badge>
               <span className="text-muted">Total: {parsedData.length}</span>
             </div>
             <div>
@@ -392,7 +393,7 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
               </thead>
               <tbody>
                 {parsedData.map((client, index) => (
-                  <tr key={index} className={client.isValid ? 'table-success' : 'table-warning'}>
+                  <tr key={index} className={client.isValid ? 'table-success' : 'table-danger'}>
                     <td>{index + 1}</td>
                     <td className="font-monospace">{client.name}</td>
                     <td>{client.contact}</td>
@@ -405,10 +406,10 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
                         <Badge bg="success">✓ Ready</Badge>
                       ) : (
                         <div>
-                          <Badge bg="warning">⚠ Needs Attention</Badge>
+                          <Badge bg="danger">Invalid</Badge>
                           <div className="small text-muted mt-1">
                             {client.errors.map((error, i) => (
-                              <div key={i} className={error.includes('Email') ? 'text-info' : 'text-warning'}>
+                              <div key={i} className={error.includes('Email') ? 'text-info' : 'text-danger'}>
                                 • {error}
                               </div>
                             ))}
@@ -429,7 +430,7 @@ const BulkClientImport = ({ onImportComplete, onClose }) => {
           <Alert variant={importResults.failed.length === 0 ? 'success' : 'warning'}>
             <h6>Import Complete!</h6>
             <p className="mb-0">
-              ✅ Successfully imported: {importResults.success.length} clients<br/>
+              ✅ Successfully imported: {importResults.success.length} clients<br />
               {importResults.failed.length > 0 && (
                 <>❌ Failed to import: {importResults.failed.length} clients</>
               )}

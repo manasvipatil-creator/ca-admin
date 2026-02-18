@@ -100,6 +100,7 @@ const Layout = ({ onLogout, children }) => {
           <Nav className="flex-column" style={{ marginTop: '20px' }}>
             <Nav.Link
               onClick={() => navigate("/admin/dashboard")}
+              className="sidebar-nav-link"
               style={{
                 color: 'white',
                 cursor: 'pointer',
@@ -138,6 +139,7 @@ const Layout = ({ onLogout, children }) => {
             </Nav.Link>
             <Nav.Link
               onClick={() => navigate("/admin/clients")}
+              className="sidebar-nav-link"
               style={{
                 color: 'white',
                 cursor: 'pointer',
@@ -176,6 +178,7 @@ const Layout = ({ onLogout, children }) => {
             </Nav.Link>
             <Nav.Link
               onClick={() => navigate("/admin/banners")}
+              className="sidebar-nav-link"
               style={{
                 color: 'white',
                 cursor: 'pointer',
@@ -214,6 +217,7 @@ const Layout = ({ onLogout, children }) => {
             </Nav.Link>
             <Nav.Link
               onClick={() => navigate("/admin/notifications")}
+              className="sidebar-nav-link"
               style={{
                 color: 'white',
                 cursor: 'pointer',

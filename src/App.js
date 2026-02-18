@@ -6,6 +6,8 @@ import "./styles/AdminPanel.css";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import Layout from "./components/Layout";
 import Login from "./components/pages/Login";
+import LandingPage from "./components/pages/LandingPage";
+import PrivacyPolicy from "./components/pages/PrivacyPolicy";
 import Dashboard from "./components/pages/Dashboard";
 import ClientManagement from "./components/pages/ClientManagement";
 import ClientForm from "./components/pages/ClientForm";
@@ -21,8 +23,8 @@ function AppContent() {
   const { authenticated, loading } = useAuth();
 
   const handleLoginSuccess = () => {
-    // Authentication state is now managed by AuthContext
-    // Always redirect to dashboard after login
+    // Authentication state is updated by AuthContext or localStorage
+    // Force a reload or redirect to dashboard to ensure state is consistent
     window.location.href = '/admin/dashboard';
   };
 
@@ -40,7 +42,7 @@ function AppContent() {
     localStorage.removeItem("userEmail");
     localStorage.removeItem("userId");
 
-    // Clear any stored navigation state and redirect to login
+    // Clear any stored navigation state and redirect to home
     window.location.href = '/';
   };
 
@@ -54,36 +56,56 @@ function AppContent() {
     );
   }
 
-  if (!authenticated) {
-    return <Login onSuccess={handleLoginSuccess} />;
-  }
-
   return (
-    <Router>
-      <Layout onLogout={handleLogout}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="/login" element={<Navigate to="/admin/dashboard" replace />} />
-          <Route path="/admin/dashboard" element={<Dashboard />} />
-          <Route path="/admin/clients" element={<ClientManagement />} />
-          <Route path="/admin/clients/new" element={<ClientForm />} />
-          <Route path="/admin/clients/edit" element={<ClientForm />} />
-          <Route path="/admin/documents" element={<DocumentManagement />} />
-          <Route path="/admin/generic-documents" element={<GenericDocumentManagement />} />
-          <Route path="/admin/years" element={<YearManagement />} />
-          <Route path="/admin/banners" element={<BannerManagement />} />
-          <Route path="/admin/notifications" element={<NotificationManagement />} />
-          <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
-        </Routes>
-      </Layout>
-    </Router>
+    <Routes>
+      {/* Public Routes */}
+      <Route
+        path="/"
+        element={!authenticated ? <LandingPage /> : <Navigate to="/admin/dashboard" replace />}
+      />
+      <Route
+        path="/login"
+        element={!authenticated ? <Login onSuccess={handleLoginSuccess} /> : <Navigate to="/admin/dashboard" replace />}
+      />
+      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+
+      {/* Admin Routes */}
+      <Route
+        path="/admin/*"
+        element={
+          authenticated ? (
+            <Layout onLogout={handleLogout}>
+              <Routes>
+                <Route path="dashboard" element={<Dashboard />} />
+                <Route path="clients" element={<ClientManagement />} />
+                <Route path="clients/new" element={<ClientForm />} />
+                <Route path="clients/edit" element={<ClientForm />} />
+                <Route path="documents" element={<DocumentManagement />} />
+                <Route path="generic-documents" element={<GenericDocumentManagement />} />
+                <Route path="years" element={<YearManagement />} />
+                <Route path="banners" element={<BannerManagement />} />
+                <Route path="notifications" element={<NotificationManagement />} />
+                <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+              </Routes>
+            </Layout>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+
+      {/* Catch all - redirect to home */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <Router>
+        <AppContent />
+      </Router>
     </AuthProvider>
   );
 }

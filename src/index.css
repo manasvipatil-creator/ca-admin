@@ -36,7 +36,7 @@ code {
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .bulk-import-container .progress {
@@ -45,4 +45,16 @@ code {
 
 .bulk-import-container .badge {
   font-size: 0.75em;
+}
+
+.sidebar-nav-link {
+  color: white !important;
+}
+
+.sidebar-nav-link svg {
+  color: white !important;
+}
+
+.sidebar-nav-link span {
+  color: white !important;
 }

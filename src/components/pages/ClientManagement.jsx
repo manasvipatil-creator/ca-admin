@@ -107,7 +107,16 @@ const UserManagement = ({ goToReports = () => { } }) => {
   const [isDeletingClient, setIsDeletingClient] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  /* Initialize pageSize from localStorage or default to 10 */
+  const [pageSize, setPageSize] = useState(() => {
+    const savedSize = localStorage.getItem('clientPageSize');
+    return savedSize ? parseInt(savedSize, 10) : 10;
+  });
+
+  /* Save pageSize to localStorage whenever it changes */
+  useEffect(() => {
+    localStorage.setItem('clientPageSize', pageSize);
+  }, [pageSize]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterYear, setFilterYear] = useState("");
   const [showYearModal, setShowYearModal] = useState(false);
